@@ -161,16 +161,27 @@ VIS_TSNE_PERPLEXITY = 30
 PCA_DIMENSION_FOR_CLUSTERING = 50
 # EVAL_HIST_BINS：评估直方图分箱；用途：概率分布可视化精度；推荐值：50（30-100）
 EVAL_HIST_BINS = 100
-EVAL_PREDICTION_THRESHOLD = 0.5
-EVAL_TOP_FEATURE_COUNT = 20
+# EVAL_PREDICTION_THRESHOLD：评估恶意概率阈值；用途：将概率转标签以计算指标；推荐值：0.5（按验证集校准）
+EVAL_PREDICTION_THRESHOLD = 0.95
+# EVAL_TOP_FEATURE_COUNT：Top 特征数量；用途：训练后输出前 N 个重要特征；推荐值：20（10-50）
+EVAL_TOP_FEATURE_COUNT = 50
+# EVAL_FONT_FAMILY：评估图中文字体；用途：确保中文标签正常显示；推荐值：['SimHei','Microsoft YaHei']
 EVAL_FONT_FAMILY = ['SimHei', 'Microsoft YaHei']
-DEFAULT_TEST_SIZE = 0.1
+# DEFAULT_TEST_SIZE：测试集比例；用途：数据集划分的测试集占比；推荐值：0.1（0.1-0.2）
+DEFAULT_TEST_SIZE = 0.2
+# DEFAULT_RANDOM_STATE：随机种子；用途：保证训练/可视化结果可复现；推荐值：42
 DEFAULT_RANDOM_STATE = 42
+# COMMON_SECTIONS：常见节名列表；用途：节存在布尔特征与结构判断；推荐值：['.text','.data','.rdata','.reloc','.rsrc']
 COMMON_SECTIONS = ['.text', '.data', '.rdata', '.reloc', '.rsrc']
+# PACKER_SECTION_KEYWORDS：打包器关键词；用途：基于节名识别常见打包器；推荐值：['upx','mpress','aspack','themida']
 PACKER_SECTION_KEYWORDS = ['upx', 'mpress', 'aspack', 'themida']
+# SYSTEM_DLLS：系统 DLL 集合；用途：统计导入系统 DLL 的数量/占比；推荐值：常见基础系统库集合
 SYSTEM_DLLS = {'kernel32','user32','gdi32','advapi32','shell32','ole32','comctl32'}
+# ENTROPY_HIGH_THRESHOLD：高熵阈值；用途：计算高熵块占比；推荐值：0.8（0.7-0.9）
 ENTROPY_HIGH_THRESHOLD = 0.8
+# ENTROPY_LOW_THRESHOLD：低熵阈值；用途：计算低熵块占比；推荐值：0.2（0.1-0.3）
 ENTROPY_LOW_THRESHOLD = 0.2
+# LARGE_TRAILING_DATA_SIZE：大尾部数据大小阈值（字节）；用途：识别异常附加数据；推荐值：1MB（512KB-4MB）
 LARGE_TRAILING_DATA_SIZE = 1024 * 1024
 # FAMILY_THRESHOLD_PERCENTILE：家族阈值百分位；用途：确定家族置信阈；推荐值：95（90-99）
 FAMILY_THRESHOLD_PERCENTILE = 90
