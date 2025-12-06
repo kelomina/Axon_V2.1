@@ -144,7 +144,7 @@ class MalwareScanner:
 
         try:
 
-            byte_sequence, pe_features = extract_features_in_memory(file_path, self.max_file_size)
+            byte_sequence, pe_features, orig_length = extract_features_in_memory(file_path, self.max_file_size)
             if byte_sequence is None or pe_features is None:
                 raise Exception("Failed to extract features in memory")
 
@@ -153,7 +153,7 @@ class MalwareScanner:
                 fixed_pe_features[:min(len(pe_features), 1000)] = pe_features[:min(len(pe_features), 1000)]
                 pe_features = fixed_pe_features
 
-            features = extract_statistical_features(byte_sequence, pe_features)
+            features = extract_statistical_features(byte_sequence, pe_features, orig_length)
             return features
         except Exception as e:
             print(f"[!] File preprocessing failed {file_path}: {e}")

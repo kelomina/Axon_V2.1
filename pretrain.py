@@ -178,13 +178,87 @@ def main(args):
 
     print("\n[*] Top 20 important features:")
     feature_importance = model.feature_importance(importance_type='gain')
-    feature_names = [f'feature_{i}' for i in range(len(feature_importance))]
-    importance_pairs = list(zip(feature_names, feature_importance))
-    importance_pairs.sort(key=lambda x: x[1], reverse=True)
-
-    for i, (name, importance) in enumerate(importance_pairs[:20]):
-
-        print(f"    {i+1:2d}. {name}: {importance:.2f}")
+    indices_sorted = np.argsort(feature_importance)[::-1]
+    def get_feature_semantics(index):
+        n_stat = 49
+        if index < n_stat:
+            if index == 0:
+                return '字节均值'
+            elif index == 1:
+                return '字节标准差'
+            elif index == 2:
+                return '字节最小值'
+            elif index == 3:
+                return '字节最大值'
+            elif index == 4:
+                return '字节中位数'
+            elif index == 5:
+                return '字节25分位'
+            elif index == 6:
+                return '字节75分位'
+            elif index == 7:
+                return '零字节计数'
+            elif index == 8:
+                return '0xFF字节计数'
+            elif index == 9:
+                return '0x90字节计数'
+            elif index == 10:
+                return '可打印字节计数'
+            elif index == 11:
+                return '全局熵'
+            elif 12 <= index <= 20:
+                pos = (index - 12) // 3
+                mod = (index - 12) % 3
+                seg = ['前段','中段','后段'][pos]
+                name = ['均值','标准差','熵'][mod]
+                return seg + name
+            elif 21 <= index <= 30:
+                return f'分块均值_{index-21}'
+            elif 31 <= index <= 40:
+                return f'分块标准差_{index-31}'
+            elif 41 <= index <= 44:
+                return ['分块均值差绝对均值','分块均值差标准差','分块均值差最大值','分块均值差最小值'][index-41]
+            elif 45 <= index <= 48:
+                return ['分块标准差差绝对均值','分块标准差差标准差','分块标准差差最大值','分块标准差差最小值'][index-45]
+            else:
+                return '统计特征'
+        j = index - n_stat
+        if j < 256:
+            if j < 128:
+                return '轻量哈希位:导入DLL'
+            elif j < 224:
+                return '轻量哈希位:导入API'
+            else:
+                return '轻量哈希位:节名'
+        k = j - 256
+        order = [
+            'size','log_size','sections_count','symbols_count','imports_count','exports_count',
+            'unique_imports','unique_dlls','unique_apis','section_names_count','section_total_size',
+            'section_total_vsize','avg_section_size','avg_section_vsize','subsystem','dll_characteristics',
+            'code_section_ratio','data_section_ratio','code_vsize_ratio','data_vsize_ratio',
+            'has_nx_compat','has_aslr','has_seh','has_guard_cf','has_resources','has_debug_info',
+            'has_tls','has_relocs','has_exceptions','dll_name_avg_length','dll_name_max_length',
+            'dll_name_min_length','section_name_avg_length','section_name_max_length','section_name_min_length',
+            'export_name_avg_length','export_name_max_length','export_name_min_length','max_section_size',
+            'min_section_size','long_sections_count','short_sections_count','section_size_std','section_size_cv',
+            'executable_writable_sections','file_entropy_avg','file_entropy_min','file_entropy_max','file_entropy_range',
+            'zero_byte_ratio','printable_byte_ratio','trailing_data_size','trailing_data_ratio','imported_system_dlls_count',
+            'exports_density','has_large_trailing_data','pe_header_size','header_size_ratio','file_entropy_std',
+            'file_entropy_q25','file_entropy_q75','file_entropy_median','high_entropy_ratio','low_entropy_ratio',
+            'entropy_change_rate','entropy_change_std','executable_sections_count','writable_sections_count',
+            'readable_sections_count','executable_sections_ratio','writable_sections_ratio','readable_sections_ratio',
+            'executable_code_density','non_standard_executable_sections_count','rwx_sections_count','rwx_sections_ratio',
+            'special_char_ratio','long_sections_ratio','short_sections_ratio','has_.text_section','has_.data_section','has_.rdata_section','has_.reloc_section','has_.rsrc_section',
+            'has_signature','signature_size','version_info_present','company_name_len','product_name_len','file_version_len','original_filename_len',
+            'has_upx_section','has_mpress_section','has_aspack_section','has_themida_section','timestamp','timestamp_year'
+        ]
+        if k < len(order):
+            m = order[k]
+            return m
+        return 'PE特征'
+    for rank, idx in enumerate(indices_sorted[:20], 1):
+        semantics = get_feature_semantics(idx)
+        print(f"    {rank:2d}. feature_{idx}: {feature_importance[idx]:.2f} ({semantics})")
 
     print(f"\n[+] LightGBM pre-training completed! Model saved to: {MODEL_PATH}")
 

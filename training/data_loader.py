@@ -51,8 +51,8 @@ def load_dataset(data_dir, metadata_file, max_file_size=DEFAULT_MAX_FILE_SIZE, f
     progress_desc = "Extracting features"
     for i in tqdm(range(total_samples), desc=progress_desc):
         try:
-            byte_sequence, pe_features, label = dataset[i]
-            features = extract_statistical_features(byte_sequence, pe_features)
+            byte_sequence, pe_features, label, orig_length = dataset[i]
+            features = extract_statistical_features(byte_sequence, pe_features, orig_length)
             features_list.append(features)
             labels_list.append(label)
             valid_files.append(all_files[i])
@@ -178,6 +178,7 @@ def load_incremental_dataset(data_dir, max_file_size=DEFAULT_MAX_FILE_SIZE):
                         pe_features = pe_features.flatten()
                 else:
                     pe_features = np.zeros(1000, dtype=np.float32)
+                orig_length = data['orig_length'] if 'orig_length' in data else max_file_size
             if len(byte_sequence) > max_file_size:
                 byte_sequence = byte_sequence[:max_file_size]
             else:
@@ -186,7 +187,7 @@ def load_incremental_dataset(data_dir, max_file_size=DEFAULT_MAX_FILE_SIZE):
                 fixed_pe_features = np.zeros(1000, dtype=np.float32)
                 fixed_pe_features[:min(len(pe_features), 1000)] = pe_features[:min(len(pe_features), 1000)]
                 pe_features = fixed_pe_features
-            features = extract_statistical_features(byte_sequence, pe_features)
+            features = extract_statistical_features(byte_sequence, pe_features, int(orig_length))
             features_list.append(features)
             valid_file_names.append(file_names[i])
         except Exception as e:

@@ -371,11 +371,20 @@ def extract_enhanced_pe_features(file_path):
                 features['section_name_max_length'] = np.max(section_name_lengths)
                 features['section_name_min_length'] = np.min(section_name_lengths)
                 missing_flags['section_name_stats_missing'] = 0
+                lower_names = [n.lower() for n in section_names]
+                features['has_upx_section'] = 1 if any('upx' in n for n in lower_names) else 0
+                features['has_mpress_section'] = 1 if any('mpress' in n for n in lower_names) else 0
+                features['has_aspack_section'] = 1 if any('aspack' in n for n in lower_names) else 0
+                features['has_themida_section'] = 1 if any('themida' in n for n in lower_names) else 0
             else:
                 features['section_name_avg_length'] = 0
                 features['section_name_max_length'] = 0
                 features['section_name_min_length'] = 0
                 missing_flags['section_name_stats_missing'] = 1
+                features['has_upx_section'] = 0
+                features['has_mpress_section'] = 0
+                features['has_aspack_section'] = 0
+                features['has_themida_section'] = 0
 
             special_char_count = 0
             total_chars = 0
@@ -447,6 +456,59 @@ def extract_enhanced_pe_features(file_path):
         features['has_tls'] = 1 if hasattr(pe, 'DIRECTORY_ENTRY_TLS') else 0
         features['has_relocs'] = 1 if hasattr(pe, 'DIRECTORY_ENTRY_BASERELOC') else 0
         features['has_exceptions'] = 1 if hasattr(pe, 'DIRECTORY_ENTRY_EXCEPTION') else 0
+        try:
+            sec_dir = pe.OPTIONAL_HEADER.DATA_DIRECTORY[pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_SECURITY']]
+            sig_size = getattr(sec_dir, 'Size', 0)
+            features['has_signature'] = 1 if sig_size and sig_size > 0 else 0
+            features['signature_size'] = sig_size if sig_size else 0
+            try:
+                va = getattr(sec_dir, 'VirtualAddress', 0)
+                sz = getattr(sec_dir, 'Size', 0)
+                if va and sz:
+                    with open(valid_path, 'rb') as f:
+                        f.seek(va)
+                        blob = f.read(sz)
+                    has_st = (b'signingTime' in blob) or (b'1.2.840.113549.1.9.5' in blob)
+                    features['signature_has_signing_time'] = 1 if has_st else 0
+                else:
+                    features['signature_has_signing_time'] = 0
+            except Exception:
+                features['signature_has_signing_time'] = 0
+        except Exception:
+            features['has_signature'] = 0
+            features['signature_size'] = 0
+            features['signature_has_signing_time'] = 0
+        version_info_present = 0
+        company_name_len = 0
+        product_name_len = 0
+        file_version_len = 0
+        original_filename_len = 0
+        try:
+            pe.parse_data_directories(directories=[pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_RESOURCE']])
+            if hasattr(pe, 'FileInfo'):
+                for fi in pe.FileInfo:
+                    if hasattr(fi, 'StringTable'):
+                        for st in fi.StringTable:
+                            if hasattr(st, 'entries'):
+                                version_info_present = 1
+                                for k, v in st.entries.items():
+                                    key = k.strip().lower()
+                                    val = v.strip() if isinstance(v, str) else ''
+                                    if key == 'companyname':
+                                        company_name_len = max(company_name_len, len(val))
+                                    elif key == 'productname':
+                                        product_name_len = max(product_name_len, len(val))
+                                    elif key == 'fileversion':
+                                        file_version_len = max(file_version_len, len(val))
+                                    elif key == 'originalfilename':
+                                        original_filename_len = max(original_filename_len, len(val))
+        except Exception:
+            pass
+        features['version_info_present'] = version_info_present
+        features['company_name_len'] = company_name_len
+        features['product_name_len'] = product_name_len
+        features['file_version_len'] = file_version_len
+        features['original_filename_len'] = original_filename_len
         missing_flags['directory_entries_missing'] = 0 if (hasattr(pe, 'DIRECTORY_ENTRY_RESOURCE') or
                                                           hasattr(pe, 'DIRECTORY_ENTRY_DEBUG') or
                                                           hasattr(pe, 'DIRECTORY_ENTRY_TLS') or
@@ -618,6 +680,10 @@ def extract_combined_pe_features(file_path):
     common_sections = ['.text', '.data', '.rdata', '.reloc', '.rsrc']
     for sec in common_sections:
         feature_order.append(f'has_{sec}_section')
+    feature_order.extend([
+        'has_signature','signature_size','signature_has_signing_time','version_info_present','company_name_len','product_name_len','file_version_len','original_filename_len',
+        'has_upx_section','has_mpress_section','has_aspack_section','has_themida_section','timestamp','timestamp_year'
+    ])
 
     for i, key in enumerate(feature_order):
         if 256 + i >= 1000:
@@ -780,3 +846,11 @@ if __name__ == '__main__':
 
     total_errors = sum(r.get('errors', 0) for r in results)
     print(f"\n[!] 本次运行共捕获到 {total_errors} 个错误")
+    try:
+        tds = getattr(pe.FILE_HEADER, 'TimeDateStamp', 0)
+        features['timestamp'] = int(tds) if tds else 0
+        from datetime import datetime
+        features['timestamp_year'] = datetime.utcfromtimestamp(int(tds)).year if tds else 0
+    except Exception:
+        features['timestamp'] = 0
+        features['timestamp_year'] = 0

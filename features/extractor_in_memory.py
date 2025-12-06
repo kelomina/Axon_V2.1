@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import pefile
+import hashlib
 from utils.path_utils import validate_path
 from config.config import DEFAULT_MAX_FILE_SIZE, ENTROPY_BLOCK_SIZE, ENTROPY_SAMPLE_SIZE
 
@@ -43,20 +44,21 @@ def calculate_byte_entropy(byte_sequence, block_size=ENTROPY_BLOCK_SIZE):
 def extract_byte_sequence(file_path, max_file_size):
     valid_path = validate_path(file_path)
     if not valid_path:
-        return None
+        return None, 0
     try:
         with open(valid_path, 'rb') as f:
             f.seek(8)
-            byte_sequence = np.fromfile(f, dtype=np.uint8, count=max_file_size - 8)
-        if len(byte_sequence) < max_file_size - 8:
+            raw_bytes = np.fromfile(f, dtype=np.uint8, count=max_file_size - 8)
+        orig_len = len(raw_bytes)
+        if orig_len < max_file_size - 8:
             padded_sequence = np.zeros(max_file_size, dtype=np.uint8)
-            padded_sequence[:len(byte_sequence)] = byte_sequence
-            return padded_sequence
+            padded_sequence[:orig_len] = raw_bytes
+            return padded_sequence, orig_len
         full_sequence = np.zeros(max_file_size, dtype=np.uint8)
-        full_sequence[:len(byte_sequence)] = byte_sequence
-        return full_sequence
+        full_sequence[:orig_len] = raw_bytes
+        return full_sequence, orig_len
     except Exception:
-        return None
+        return None, 0
 
 def extract_file_attributes(file_path):
     features = {}
@@ -251,10 +253,19 @@ def extract_enhanced_pe_features(file_path):
                 features['section_name_avg_length'] = np.mean(section_name_lengths)
                 features['section_name_max_length'] = np.max(section_name_lengths)
                 features['section_name_min_length'] = np.min(section_name_lengths)
+                lower_names = [n.lower() for n in section_names]
+                features['has_upx_section'] = 1 if any('upx' in n for n in lower_names) else 0
+                features['has_mpress_section'] = 1 if any('mpress' in n for n in lower_names) else 0
+                features['has_aspack_section'] = 1 if any('aspack' in n for n in lower_names) else 0
+                features['has_themida_section'] = 1 if any('themida' in n for n in lower_names) else 0
             else:
                 features['section_name_avg_length'] = 0
                 features['section_name_max_length'] = 0
                 features['section_name_min_length'] = 0
+                features['has_upx_section'] = 0
+                features['has_mpress_section'] = 0
+                features['has_aspack_section'] = 0
+                features['has_themida_section'] = 0
         else:
             features['section_name_avg_length'] = 0
             features['section_name_max_length'] = 0
@@ -297,6 +308,67 @@ def extract_enhanced_pe_features(file_path):
         features['has_relocs'] = 1 if hasattr(pe, 'DIRECTORY_ENTRY_BASERELOC') else 0
         features['has_exceptions'] = 1 if hasattr(pe, 'DIRECTORY_ENTRY_EXCEPTION') else 0
         try:
+            tds = getattr(pe.FILE_HEADER, 'TimeDateStamp', 0)
+            features['timestamp'] = int(tds) if tds else 0
+            from datetime import datetime
+            features['timestamp_year'] = datetime.utcfromtimestamp(int(tds)).year if tds else 0
+        except Exception:
+            features['timestamp'] = 0
+            features['timestamp_year'] = 0
+        try:
+            sec_dir = pe.OPTIONAL_HEADER.DATA_DIRECTORY[pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_SECURITY']]
+            sig_size = getattr(sec_dir, 'Size', 0)
+            features['has_signature'] = 1 if sig_size and sig_size > 0 else 0
+            features['signature_size'] = sig_size if sig_size else 0
+            try:
+                va = getattr(sec_dir, 'VirtualAddress', 0)
+                sz = getattr(sec_dir, 'Size', 0)
+                if va and sz:
+                    with open(valid_path, 'rb') as f:
+                        f.seek(va)
+                        blob = f.read(sz)
+                    has_st = (b'signingTime' in blob) or (b'1.2.840.113549.1.9.5' in blob)
+                    features['signature_has_signing_time'] = 1 if has_st else 0
+                else:
+                    features['signature_has_signing_time'] = 0
+            except Exception:
+                features['signature_has_signing_time'] = 0
+        except Exception:
+            features['has_signature'] = 0
+            features['signature_size'] = 0
+            features['signature_has_signing_time'] = 0
+        version_info_present = 0
+        company_name_len = 0
+        product_name_len = 0
+        file_version_len = 0
+        original_filename_len = 0
+        try:
+            pe.parse_data_directories(directories=[pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_RESOURCE']])
+            if hasattr(pe, 'FileInfo'):
+                for fi in pe.FileInfo:
+                    if hasattr(fi, 'StringTable'):
+                        for st in fi.StringTable:
+                            if hasattr(st, 'entries'):
+                                version_info_present = 1
+                                for k, v in st.entries.items():
+                                    key = k.strip().lower()
+                                    val = v.strip() if isinstance(v, str) else ''
+                                    if key == 'companyname':
+                                        company_name_len = max(company_name_len, len(val))
+                                    elif key == 'productname':
+                                        product_name_len = max(product_name_len, len(val))
+                                    elif key == 'fileversion':
+                                        file_version_len = max(file_version_len, len(val))
+                                    elif key == 'originalfilename':
+                                        original_filename_len = max(original_filename_len, len(val))
+        except Exception:
+            pass
+        features['version_info_present'] = version_info_present
+        features['company_name_len'] = company_name_len
+        features['product_name_len'] = product_name_len
+        features['file_version_len'] = file_version_len
+        features['original_filename_len'] = original_filename_len
+        try:
             pe_header_size = pe.OPTIONAL_HEADER.SizeOfHeaders
             features['pe_header_size'] = pe_header_size
             features['header_size_ratio'] = pe_header_size / (file_size + 1)
@@ -336,16 +408,19 @@ def extract_lightweight_pe_features(file_path):
             for entry in pe.DIRECTORY_ENTRY_IMPORT:
                 if entry.dll:
                     dll_name = entry.dll.decode('utf-8').lower()
-                    feature_vector[hash(dll_name) % 128] = 1
+                    dll_hash = int(hashlib.sha256(dll_name.encode('utf-8')).hexdigest(), 16)
+                    feature_vector[dll_hash % 128] = 1
             for entry in pe.DIRECTORY_ENTRY_IMPORT:
                 for imp in entry.imports:
                     if imp.name:
                         api_name = imp.name.decode('utf-8')
-                        feature_vector[128 + (hash(api_name) % 128)] = 1
+                        api_hash = int(hashlib.sha256(api_name.encode('utf-8')).hexdigest(), 16)
+                        feature_vector[128 + (api_hash % 128)] = 1
         if hasattr(pe, 'sections'):
             for section in pe.sections:
                 section_name = section.Name.decode('utf-8', 'ignore').strip('\x00')
-                feature_vector[(hash(section_name) % 32) + 224] = 1
+                section_hash = int(hashlib.sha256(section_name.encode('utf-8')).hexdigest(), 16)
+                feature_vector[(section_hash % 32) + 224] = 1
         norm = np.linalg.norm(feature_vector)
         if norm > 0 and not np.isnan(norm):
             feature_vector /= norm
@@ -386,6 +461,10 @@ def extract_combined_pe_features(file_path):
     common_sections = ['.text','.data','.rdata','.reloc','.rsrc']
     for sec in common_sections:
         feature_order.append(f'has_{sec}_section')
+    feature_order.extend([
+        'has_signature','signature_size','signature_has_signing_time','version_info_present','company_name_len','product_name_len','file_version_len','original_filename_len',
+        'has_upx_section','has_mpress_section','has_aspack_section','has_themida_section','timestamp','timestamp_year'
+    ])
     for i, key in enumerate(feature_order):
         if 256 + i >= 1000:
             break
@@ -410,8 +489,8 @@ def extract_combined_pe_features(file_path):
     return combined_vector
 
 def extract_features_in_memory(input_file_path, max_file_size=DEFAULT_MAX_FILE_SIZE):
-    byte_sequence = extract_byte_sequence(input_file_path, max_file_size)
+    byte_sequence, orig_len = extract_byte_sequence(input_file_path, max_file_size)
     if byte_sequence is None:
-        return None, None
+        return None, None, 0
     pe_features = extract_combined_pe_features(input_file_path)
-    return byte_sequence, pe_features
+    return byte_sequence, pe_features, orig_len

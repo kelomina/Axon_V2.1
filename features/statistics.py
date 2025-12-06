@@ -1,8 +1,11 @@
 import numpy as np
 from config.config import BYTE_HISTOGRAM_BINS, STAT_CHUNK_COUNT
 
-def extract_statistical_features(byte_sequence, pe_features):
-    byte_array = np.array(byte_sequence, dtype=np.uint8)
+def extract_statistical_features(byte_sequence, pe_features, orig_length=None):
+    if orig_length is not None and orig_length >= 0:
+        byte_array = np.array(byte_sequence[:orig_length], dtype=np.uint8)
+    else:
+        byte_array = np.array(byte_sequence, dtype=np.uint8)
     features = []
     features.extend([
         float(np.mean(byte_array)),
@@ -45,12 +48,12 @@ def extract_statistical_features(byte_sequence, pe_features):
             seg_hist = seg_hist[seg_hist > 0]
             seg_entropy = -np.sum(seg_hist * np.log2(seg_hist)) if len(seg_hist) > 0 else 0.0
         features.extend([seg_mean, seg_std, seg_entropy])
-    chunk_size = max(1, len(byte_array) // STAT_CHUNK_COUNT)
+    chunk_size = max(1, length // STAT_CHUNK_COUNT)
     chunk_means = []
     chunk_stds = []
     for i in range(STAT_CHUNK_COUNT):
         start_idx = i * chunk_size
-        end_idx = start_idx + chunk_size if i < 9 else len(byte_array)
+        end_idx = start_idx + chunk_size if i < 9 else length
         chunk = byte_array[start_idx:end_idx]
         if len(chunk) > 0:
             chunk_means.append(float(np.mean(chunk)))
