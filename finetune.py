@@ -28,7 +28,7 @@ from config.config import (
     PROCESSED_DATA_DIR, FEATURES_PKL_PATH, DEFAULT_MAX_FILE_SIZE,
     DEFAULT_MIN_CLUSTER_SIZE, DEFAULT_MIN_SAMPLES, DEFAULT_MIN_FAMILY_SIZE,
     HDBSCAN_SAVE_DIR, HDBSCAN_CLUSTER_FIG_PATH, HDBSCAN_PCA_FIG_PATH,
-    VIS_SAMPLE_SIZE, VIS_TSNE_PERPLEXITY, PCA_DIMENSION_FOR_CLUSTERING
+    VIS_SAMPLE_SIZE, VIS_TSNE_PERPLEXITY, PCA_DIMENSION_FOR_CLUSTERING, DEFAULT_RANDOM_STATE
 )
 
 
@@ -49,7 +49,7 @@ def load_features_from_pickle(pickle_path):
 
     return features, labels, files
 
-def extract_features_with_labels(data_dir, metadata_file, max_file_size=256*1024):
+def extract_features_with_labels(data_dir, metadata_file, max_file_size=DEFAULT_MAX_FILE_SIZE):
 
     X, y, files = load_dataset(data_dir, metadata_file, max_file_size)
     return X, y, files
@@ -81,7 +81,7 @@ def perform_hdbscan_clustering(features, min_cluster_size=50, min_samples=10):
 
     if features_scaled.shape[1] > PCA_DIMENSION_FOR_CLUSTERING:
         print(f"    [*] High feature dimension, reducing to {PCA_DIMENSION_FOR_CLUSTERING} dimensions using PCA for better clustering...")
-        pca = PCA(n_components=PCA_DIMENSION_FOR_CLUSTERING, random_state=42)
+        pca = PCA(n_components=PCA_DIMENSION_FOR_CLUSTERING, random_state=DEFAULT_RANDOM_STATE)
         features_for_clustering = pca.fit_transform(features_scaled)
         print(f"    [*] Reduced feature dimension: {features_for_clustering.shape[1]}")
     else:
@@ -167,7 +167,7 @@ def visualize_clusters(features, labels, save_path, plot_pca=False):
         labels = labels[indices]
 
     print("    [*] Using t-SNE for dimensionality reduction...")
-    tsne = TSNE(n_components=2, random_state=42, perplexity=min(VIS_TSNE_PERPLEXITY, len(features_vis)-1))
+    tsne = TSNE(n_components=2, random_state=DEFAULT_RANDOM_STATE, perplexity=min(VIS_TSNE_PERPLEXITY, len(features_vis)-1))
     features_2d = tsne.fit_transform(features_vis)
 
     plt.figure(figsize=(12, 10))
@@ -187,7 +187,7 @@ def visualize_clusters(features, labels, save_path, plot_pca=False):
     if plot_pca:
         pca_save_path = HDBSCAN_PCA_FIG_PATH
         print("    [*] Generating additional PCA dimensionality reduction visualization...")
-        pca_2d = PCA(n_components=2, random_state=42)
+        pca_2d = PCA(n_components=2, random_state=DEFAULT_RANDOM_STATE)
         features_pca_2d = pca_2d.fit_transform(features_scaled)
 
         plt.figure(figsize=(12, 10))

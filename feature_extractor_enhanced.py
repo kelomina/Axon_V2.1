@@ -7,7 +7,7 @@ import multiprocessing
 import hashlib
 import struct
 from datetime import datetime
-from config.config import DEFAULT_MAX_FILE_SIZE, PE_FEATURE_VECTOR_DIM, LIGHTWEIGHT_FEATURE_DIM, LIGHTWEIGHT_FEATURE_SCALE, SIZE_NORM_MAX, TIMESTAMP_MAX, TIMESTAMP_YEAR_BASE, TIMESTAMP_YEAR_MAX
+from config.config import DEFAULT_MAX_FILE_SIZE, PE_FEATURE_VECTOR_DIM, LIGHTWEIGHT_FEATURE_DIM, LIGHTWEIGHT_FEATURE_SCALE, SIZE_NORM_MAX, TIMESTAMP_MAX, TIMESTAMP_YEAR_BASE, TIMESTAMP_YEAR_MAX, SYSTEM_DLLS, COMMON_SECTIONS, ENTROPY_HIGH_THRESHOLD, ENTROPY_LOW_THRESHOLD, LARGE_TRAILING_DATA_SIZE
 
 MAX_FILE_SIZE = DEFAULT_MAX_FILE_SIZE
 PE_FEATURE_SIZE = 500
@@ -138,10 +138,9 @@ def extract_file_attributes(file_path):
             features['file_entropy_median'] = np.median(block_entropies)
             missing_flags['file_entropy_percentiles_missing'] = 0
 
-            high_entropy_count = sum(1 for e in block_entropies if e > 0.8)
+            high_entropy_count = sum(1 for e in block_entropies if e > ENTROPY_HIGH_THRESHOLD)
             features['high_entropy_ratio'] = high_entropy_count / len(block_entropies)
-
-            low_entropy_count = sum(1 for e in block_entropies if e < 0.2)
+            low_entropy_count = sum(1 for e in block_entropies if e < ENTROPY_LOW_THRESHOLD)
             features['low_entropy_ratio'] = low_entropy_count / len(block_entropies)
 
             if len(block_entropies) > 1:
@@ -239,8 +238,7 @@ def extract_enhanced_pe_features(file_path):
             else:
                 missing_flags['dll_stats_missing'] = 1
 
-            system_dlls = {'kernel32', 'user32', 'gdi32', 'advapi32', 'shell32', 'ole32', 'comctl32'}
-            imported_system_dlls = set(dll.split('.')[0].lower() for dll in dll_names if dll) & system_dlls
+            imported_system_dlls = set(dll.split('.')[0].lower() for dll in dll_names if dll) & set(SYSTEM_DLLS)
             features['imported_system_dlls_count'] = len(imported_system_dlls)
             missing_flags['imported_system_dlls_missing'] = 0
         else:
@@ -424,8 +422,7 @@ def extract_enhanced_pe_features(file_path):
             missing_flags['section_name_stats_missing'] = 1
             missing_flags['sections_details_missing'] = 1
 
-            common_sections = ['.text', '.data', '.rdata', '.reloc', '.rsrc']
-            for sec in common_sections:
+            for sec in COMMON_SECTIONS:
                 features[f'has_{sec}_section'] = 0
 
         if hasattr(pe.OPTIONAL_HEADER, 'Subsystem'):
@@ -525,7 +522,7 @@ def extract_enhanced_pe_features(file_path):
                 features['trailing_data_size'] = trailing_data_size
                 features['trailing_data_ratio'] = trailing_data_size / (file_size + 1)
 
-                features['has_large_trailing_data'] = 1 if trailing_data_size > 1024 * 1024 else 0
+                features['has_large_trailing_data'] = 1 if trailing_data_size > LARGE_TRAILING_DATA_SIZE else 0
                 missing_flags['trailing_data_missing'] = 0
         except Exception:
             increment_error()
@@ -579,8 +576,7 @@ def extract_enhanced_pe_features(file_path):
         for key in default_keys:
             features[key] = 0
 
-        common_sections = ['.text', '.data', '.rdata', '.reloc', '.rsrc']
-        for sec in common_sections:
+        for sec in COMMON_SECTIONS:
             features[f'has_{sec}_section'] = 0
 
         missing_flag_names = ['sections_count_missing', 'symbols_count_missing', 'dll_stats_missing',

@@ -3,7 +3,7 @@ import numpy as np
 import pefile
 import hashlib
 from utils.path_utils import validate_path
-from config.config import DEFAULT_MAX_FILE_SIZE, ENTROPY_BLOCK_SIZE, ENTROPY_SAMPLE_SIZE
+from config.config import DEFAULT_MAX_FILE_SIZE, ENTROPY_BLOCK_SIZE, ENTROPY_SAMPLE_SIZE, PE_FEATURE_VECTOR_DIM, LIGHTWEIGHT_FEATURE_DIM, LIGHTWEIGHT_FEATURE_SCALE, SIZE_NORM_MAX, TIMESTAMP_MAX, TIMESTAMP_YEAR_BASE, TIMESTAMP_YEAR_MAX, COMMON_SECTIONS, SYSTEM_DLLS
 
 def calculate_byte_entropy(byte_sequence, block_size=ENTROPY_BLOCK_SIZE):
     if byte_sequence is None or len(byte_sequence) == 0:
@@ -154,8 +154,7 @@ def extract_enhanced_pe_features(file_path):
                 features['dll_name_avg_length'] = np.mean(dll_name_lengths)
                 features['dll_name_max_length'] = np.max(dll_name_lengths)
                 features['dll_name_min_length'] = np.min(dll_name_lengths)
-            system_dlls = {'kernel32','user32','gdi32','advapi32','shell32','ole32','comctl32'}
-            imported_system_dlls = set(dll.split('.')[0].lower() for dll in dll_names if dll) & system_dlls
+            imported_system_dlls = set(dll.split('.')[0].lower() for dll in dll_names if dll) & set(SYSTEM_DLLS)
             features['imported_system_dlls_count'] = len(imported_system_dlls)
         else:
             features['unique_imports'] = 0
@@ -435,10 +434,8 @@ def extract_combined_pe_features(file_path):
     all_features = {}
     all_features.update(enhanced_features)
     all_features.update(file_attrs)
-    combined_vector = np.zeros(1000, dtype=np.float32)
-    combined_vector[:256] = lightweight_features * 1.5
-    max_file_size = 100 * 1024 * 1024
-    max_timestamp = 2147483647
+    combined_vector = np.zeros(PE_FEATURE_VECTOR_DIM, dtype=np.float32)
+    combined_vector[:LIGHTWEIGHT_FEATURE_DIM] = lightweight_features * LIGHTWEIGHT_FEATURE_SCALE
     feature_order = [
         'size','log_size','sections_count','symbols_count','imports_count','exports_count',
         'unique_imports','unique_dlls','unique_apis','section_names_count','section_total_size',
@@ -458,34 +455,33 @@ def extract_combined_pe_features(file_path):
         'executable_code_density','non_standard_executable_sections_count','rwx_sections_count','rwx_sections_ratio',
         'special_char_ratio','long_sections_ratio','short_sections_ratio'
     ]
-    common_sections = ['.text','.data','.rdata','.reloc','.rsrc']
-    for sec in common_sections:
+    for sec in COMMON_SECTIONS:
         feature_order.append(f'has_{sec}_section')
     feature_order.extend([
         'has_signature','signature_size','signature_has_signing_time','version_info_present','company_name_len','product_name_len','file_version_len','original_filename_len',
         'has_upx_section','has_mpress_section','has_aspack_section','has_themida_section','timestamp','timestamp_year'
     ])
     for i, key in enumerate(feature_order):
-        if 256 + i >= 1000:
+        if 256 + i >= PE_FEATURE_VECTOR_DIM:
             break
         if key in all_features:
             val = all_features[key]
             if 'size' in key and isinstance(val, (int, float)):
-                val = val / max_file_size
+                val = val / SIZE_NORM_MAX
             elif key == 'timestamp' and isinstance(val, (int, float)):
-                val = val / max_timestamp
+                val = val / TIMESTAMP_MAX
             elif key == 'timestamp_year' and isinstance(val, (int, float)):
-                val = (val - 1970) / (2038 - 1970)
+                val = (val - TIMESTAMP_YEAR_BASE) / (TIMESTAMP_YEAR_MAX - TIMESTAMP_YEAR_BASE)
             elif key.startswith('has_') and isinstance(val, (int, float)):
                 val = float(val)
             elif key == 'log_size' and isinstance(val, (int, float)):
-                val = val / np.log(max_file_size)
+                val = val / np.log(SIZE_NORM_MAX)
             combined_vector[256 + i] = val * 0.8 if isinstance(val, (int, float)) else 0
     norm = np.linalg.norm(combined_vector)
     if norm > 0 and not np.isnan(norm):
         combined_vector /= norm
     else:
-        combined_vector = np.zeros(1000, dtype=np.float32)
+        combined_vector = np.zeros(PE_FEATURE_VECTOR_DIM, dtype=np.float32)
     return combined_vector
 
 def extract_features_in_memory(input_file_path, max_file_size=DEFAULT_MAX_FILE_SIZE):

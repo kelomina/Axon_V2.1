@@ -61,12 +61,13 @@ def main(args):
         save_features_to_pickle(X, y, files, FEATURES_PKL_PATH)
 
     if len(X) > 10:
+        from config.config import DEFAULT_TEST_SIZE, DEFAULT_RANDOM_STATE
         X_temp, X_test, y_temp, y_test, files_temp, files_test = train_test_split(
-            X, y, files, test_size=0.1, random_state=42, stratify=y if len(np.unique(y)) > 1 else None
+            X, y, files, test_size=DEFAULT_TEST_SIZE, random_state=DEFAULT_RANDOM_STATE, stratify=y if len(np.unique(y)) > 1 else None
         )
         if len(X_temp) > 5:
             X_train, X_val, y_train, y_val, files_train, files_val = train_test_split(
-                X_temp, y_temp, files_temp, test_size=0.1, random_state=42, stratify=y_temp if len(np.unique(y_temp)) > 1 else None
+                X_temp, y_temp, files_temp, test_size=DEFAULT_TEST_SIZE, random_state=DEFAULT_RANDOM_STATE, stratify=y_temp if len(np.unique(y_temp)) > 1 else None
             )
         else:
             X_train, X_val = X_temp, X_temp
@@ -256,7 +257,8 @@ def main(args):
             m = order[k]
             return m
         return 'PE特征'
-    for rank, idx in enumerate(indices_sorted[:20], 1):
+    from config.config import EVAL_TOP_FEATURE_COUNT
+    for rank, idx in enumerate(indices_sorted[:EVAL_TOP_FEATURE_COUNT], 1):
         semantics = get_feature_semantics(idx)
         print(f"    {rank:2d}. feature_{idx}: {feature_importance[idx]:.2f} ({semantics})")
 

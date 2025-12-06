@@ -3,12 +3,12 @@ import numpy as np
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, precision_score
 import matplotlib.pyplot as plt
 import seaborn as sns
-from config.config import MODEL_EVAL_FIG_DIR, MODEL_EVAL_FIG_PATH, EVAL_HIST_BINS
+from config.config import MODEL_EVAL_FIG_DIR, MODEL_EVAL_FIG_PATH, EVAL_HIST_BINS, EVAL_PREDICTION_THRESHOLD, EVAL_FONT_FAMILY
 
 def evaluate_model(model, X_test, y_test, files_test=None):
     print("[*] Evaluating model...")
     y_pred_proba = model.predict(X_test, num_iteration=model.best_iteration)
-    y_pred = (y_pred_proba > 0.5).astype(int)
+    y_pred = (y_pred_proba > EVAL_PREDICTION_THRESHOLD).astype(int)
     accuracy = accuracy_score(y_test, y_pred)
     print(f"[+] Accuracy: {accuracy:.4f}")
     print("\n[*] Classification report:")
@@ -34,7 +34,7 @@ def evaluate_model(model, X_test, y_test, files_test=None):
             print(f"    - {fp_file}")
         if len(false_positives) > 10:
             print(f"    ... and {len(false_positives) - 10} more false positive samples")
-    plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei']
+    plt.rcParams['font.sans-serif'] = EVAL_FONT_FAMILY
     plt.rcParams['axes.unicode_minus'] = False
     if len(unique_labels) > 1:
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
