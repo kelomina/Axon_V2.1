@@ -1,7 +1,7 @@
 import numpy as np
 import lightgbm as lgb
 import multiprocessing
-from config.config import WARMUP_ROUNDS, WARMUP_START_LR, LIGHTGBM_FEATURE_FRACTION, LIGHTGBM_BAGGING_FRACTION, LIGHTGBM_BAGGING_FREQ, LIGHTGBM_MIN_GAIN_TO_SPLIT, LIGHTGBM_MIN_DATA_IN_LEAF, LIGHTGBM_NUM_THREADS_MAX
+from config.config import WARMUP_ROUNDS, WARMUP_START_LR, LIGHTGBM_FEATURE_FRACTION, LIGHTGBM_BAGGING_FRACTION, LIGHTGBM_BAGGING_FREQ, LIGHTGBM_MIN_GAIN_TO_SPLIT, LIGHTGBM_MIN_DATA_IN_LEAF, LIGHTGBM_NUM_THREADS_MAX, FP_WEIGHT_BASE, FP_WEIGHT_GROWTH_PER_ITER, FP_WEIGHT_MAX
 
 def warmup_scheduler(warmup_rounds=WARMUP_ROUNDS, start_lr=WARMUP_START_LR, target_lr=0.05):
     def callback(env):
@@ -20,7 +20,7 @@ def train_lightgbm_model(X_train, y_train, X_val, y_val, false_positive_files=No
         print(f"[*] Detected {len(false_positive_files)} false positive samples, increasing their training weights")
         weights = np.ones(len(X_train), dtype=np.float32)
         false_positive_count = 0
-        weight_factor = min(5.0 + iteration * 2.0, 50.0)
+        weight_factor = min(FP_WEIGHT_BASE + iteration * FP_WEIGHT_GROWTH_PER_ITER, FP_WEIGHT_MAX)
         print(f"[*] Current false positive weight factor: {weight_factor}")
         for i, file in enumerate(files_train):
             if file in false_positive_files:

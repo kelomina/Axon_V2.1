@@ -171,6 +171,27 @@ def main(args):
             print(f"\n[*] Detected {len(false_positives)} false positive samples, but reinforcement training is not enabled")
 
             print("    To enable reinforcement training, use the --finetune-on-false-positives parameter")
+        try:
+            y_pred_proba = model.predict(X_test, num_iteration=model.best_iteration)
+            thresholds = np.arange(0.90, 0.99, 0.01)
+            from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score
+            print("\n[*] Threshold sensitivity (0.90–0.98):")
+            for t in thresholds:
+                y_pred_t = (y_pred_proba > t).astype(int)
+                cm = confusion_matrix(y_test, y_pred_t)
+                if cm.shape == (2, 2):
+                    tn, fp, fn, tp = cm.ravel()
+                else:
+                    tn = fp = fn = tp = 0
+                acc = accuracy_score(y_test, y_pred_t)
+                pre = precision_score(y_test, y_pred_t, zero_division=0)
+                rec = recall_score(y_test, y_pred_t, zero_division=0)
+                fpr = fp / (fp + tn) if (fp + tn) > 0 else 0.0
+                tpr = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+                fp_count = int(fp)
+                print(f"    t={t:.2f} acc={acc:.4f} pre={pre:.4f} rec={rec:.4f} FPR={fpr:.4f} TPR={tpr:.4f} FP={fp_count}")
+        except Exception:
+            pass
     else:
 
         print("[*] Test set is empty, skipping model evaluation")
