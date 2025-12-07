@@ -215,3 +215,4 @@ saved_models
 hdbscan_cluster_results
 reports
 extracted_features.pkl
+tests

@@ -57,10 +57,16 @@ KoloVirusDetector_ML_V2-main/
 - `scanner_service.py`：FastAPI 扫描服务
 - `config/config.py`：集中配置与默认值
 
+## 更新说明
+
+- 统计特征：采用离散概率计算熵并统一归一化到 `[0,1]`；修复分块边界与空数组防护，避免异常与 NaN；维持 49 维统计特征不变
+- PE 特征：补充计算 `executable_code_density`、`non_standard_executable_sections_count`、`executable_writable_sections`、`has_{COMMON_SECTIONS}_section`、尾部数据相关特征（`trailing_data_size/ratio`、`has_large_trailing_data`），并增加 `special_char_ratio`、`long_sections_count/ratio`、`short_sections_count/ratio`
+- 维度兼容：综合特征向量总维度保持 `1000` 不变，统计特征拼接后整体输入维度保持与现有模型一致
+
 ## 安装依赖
 
 ```bash
-pip install numpy pandas scikit-learn lightgbm matplotlib seaborn tqdm pefile torch fast-hdbscan
+pip install -r requirements.txt
 ```
 
 ## 使用方法
@@ -92,6 +98,9 @@ python main.py serve --port 8000
 - `POST /scan/file`：接受 JSON `{ "file_path": "C:\\sample.exe" }`
 - `POST /scan/upload`：上传文件内容（multipart/form-data）进行扫描
 - `GET /health`：服务健康检查
+
+例子：
+`curl -X POST "http://127.0.0.1:8000/scan/file" -H "Content-Type: application/json" -d "{\"file_path\": \"/path/to/your/file.exe\"}"`
 
 通过以下环境变量可以覆盖默认配置：
 

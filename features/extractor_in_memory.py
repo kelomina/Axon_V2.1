@@ -273,6 +273,20 @@ def extract_enhanced_pe_features(file_path):
                 features['has_mpress_section'] = 1 if any('mpress' in n for n in lower_names) else 0
                 features['has_aspack_section'] = 1 if any('aspack' in n for n in lower_names) else 0
                 features['has_themida_section'] = 1 if any('themida' in n for n in lower_names) else 0
+                special_char_count = 0
+                total_chars = 0
+                for name in section_names:
+                    total_chars += len(name)
+                    for c in name:
+                        if not (c.isalnum() or c in '_.'):
+                            special_char_count += 1
+                features['special_char_ratio'] = special_char_count / (total_chars + 1)
+                long_sections = [name for name in section_names if len(name) > 6]
+                short_sections = [name for name in section_names if len(name) < 3]
+                features['long_sections_count'] = len(long_sections)
+                features['short_sections_count'] = len(short_sections)
+                features['long_sections_ratio'] = len(long_sections) / (len(section_names) + 1)
+                features['short_sections_ratio'] = len(short_sections) / (len(section_names) + 1)
             else:
                 features['section_name_avg_length'] = 0
                 features['section_name_max_length'] = 0
@@ -281,6 +295,11 @@ def extract_enhanced_pe_features(file_path):
                 features['has_mpress_section'] = 0
                 features['has_aspack_section'] = 0
                 features['has_themida_section'] = 0
+                features['special_char_ratio'] = 0
+                features['long_sections_count'] = 0
+                features['short_sections_count'] = 0
+                features['long_sections_ratio'] = 0
+                features['short_sections_ratio'] = 0
         else:
             features['section_name_avg_length'] = 0
             features['section_name_max_length'] = 0
@@ -304,6 +323,16 @@ def extract_enhanced_pe_features(file_path):
             features['readable_sections_ratio'] = 0
             features['rwx_sections_count'] = 0
             features['rwx_sections_ratio'] = 0.0
+            features['non_standard_executable_sections_count'] = 0
+            features['executable_writable_sections'] = 0
+            features['executable_code_density'] = 0
+            for sec in COMMON_SECTIONS:
+                features[f'has_{sec}_section'] = 0
+            features['special_char_ratio'] = 0
+            features['long_sections_count'] = 0
+            features['short_sections_count'] = 0
+            features['long_sections_ratio'] = 0
+            features['short_sections_ratio'] = 0
         if hasattr(pe.OPTIONAL_HEADER, 'Subsystem'):
             features['subsystem'] = pe.OPTIONAL_HEADER.Subsystem
         else:
