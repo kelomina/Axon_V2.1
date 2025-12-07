@@ -148,13 +148,21 @@ class MalwareScanner:
             byte_sequence, pe_features, orig_length = extract_features_in_memory(file_path, self.max_file_size)
             if byte_sequence is None or pe_features is None:
                 raise Exception("Failed to extract features in memory")
-
-            if len(pe_features) != 1000:
-                fixed_pe_features = np.zeros(1000, dtype=np.float32)
-                fixed_pe_features[:min(len(pe_features), 1000)] = pe_features[:min(len(pe_features), 1000)]
+            from config.config import PE_FEATURE_VECTOR_DIM
+            orig_pe_len = len(pe_features)
+            status = 'ok'
+            if orig_pe_len != PE_FEATURE_VECTOR_DIM:
+                fixed_pe_features = np.zeros(PE_FEATURE_VECTOR_DIM, dtype=np.float32)
+                copy_len = min(orig_pe_len, PE_FEATURE_VECTOR_DIM)
+                fixed_pe_features[:copy_len] = pe_features[:copy_len]
                 pe_features = fixed_pe_features
+                status = 'padded' if orig_pe_len < PE_FEATURE_VECTOR_DIM else 'truncated'
 
             features = extract_statistical_features(byte_sequence, pe_features, orig_length)
+            try:
+                print(f"[+] 完整特征维度={len(features)}，PE维度={len(pe_features)}，状态={status}")
+            except Exception:
+                pass
             return features
         except Exception as e:
             print(f"[!] File preprocessing failed {file_path}: {e}")

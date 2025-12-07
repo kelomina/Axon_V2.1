@@ -49,9 +49,27 @@ def load_dataset(data_dir, metadata_file, max_file_size=DEFAULT_MAX_FILE_SIZE, f
     dataset = MalwareDataset(data_dir, all_files, all_labels, max_file_size)
     total_samples = len(dataset)
     progress_desc = "Extracting features"
+    from config.config import PE_FEATURE_VECTOR_DIM
+    count_ok = 0
+    count_padded = 0
+    count_truncated = 0
     for i in tqdm(range(total_samples), desc=progress_desc):
         try:
             byte_sequence, pe_features, label, orig_length = dataset[i]
+            orig_pe_len = len(pe_features)
+            status = 'ok'
+            if orig_pe_len != PE_FEATURE_VECTOR_DIM:
+                fixed_pe_features = np.zeros(PE_FEATURE_VECTOR_DIM, dtype=np.float32)
+                copy_len = min(orig_pe_len, PE_FEATURE_VECTOR_DIM)
+                fixed_pe_features[:copy_len] = pe_features[:copy_len]
+                pe_features = fixed_pe_features
+                status = 'padded' if orig_pe_len < PE_FEATURE_VECTOR_DIM else 'truncated'
+            if status == 'ok':
+                count_ok += 1
+            elif status == 'padded':
+                count_padded += 1
+            else:
+                count_truncated += 1
             features = extract_statistical_features(byte_sequence, pe_features, orig_length)
             features_list.append(features)
             labels_list.append(label)
@@ -77,6 +95,23 @@ def load_dataset(data_dir, metadata_file, max_file_size=DEFAULT_MAX_FILE_SIZE, f
     y = np.array(labels_list)
     print(f"[+] Feature extraction completed, feature dimension: {X.shape[1]}")
     print(f"[+] Valid samples: {X.shape[0]}")
+    try:
+        total = count_ok + count_padded + count_truncated
+        if total > 0:
+            print(f"[+] PE维度汇总：total={total}，ok={count_ok}，padded={count_padded}，truncated={count_truncated}")
+            from config.config import SCAN_OUTPUT_DIR, PE_DIM_SUMMARY_DATASET
+            os.makedirs(SCAN_OUTPUT_DIR, exist_ok=True)
+            with open(PE_DIM_SUMMARY_DATASET, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'total': int(total),
+                    'ok': int(count_ok),
+                    'padded': int(count_padded),
+                    'truncated': int(count_truncated),
+                    'feature_dim': int(X.shape[1]),
+                    'pe_dim': int(PE_FEATURE_VECTOR_DIM)
+                }, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
     return X, y, valid_files
 
 def extract_features_from_raw_files(data_dir, output_dir, max_file_size=DEFAULT_MAX_FILE_SIZE, file_extensions=None, label_inference='filename'):
@@ -138,6 +173,40 @@ def extract_features_from_raw_files(data_dir, output_dir, max_file_size=DEFAULT_
                 output_files.pop(idx)
                 labels.pop(idx)
     print(f"[+] Feature extraction completed: {success_count}/{len(all_files)} files processed successfully")
+    try:
+        from config.config import PE_FEATURE_VECTOR_DIM
+        count_ok = 0
+        count_padded = 0
+        count_truncated = 0
+        for of in output_files:
+            try:
+                with np.load(of) as data:
+                    if 'pe_features' in data:
+                        pe = data['pe_features']
+                        orig_len = pe.shape[0] if hasattr(pe, 'shape') else len(pe)
+                        if orig_len == PE_FEATURE_VECTOR_DIM:
+                            count_ok += 1
+                        elif orig_len < PE_FEATURE_VECTOR_DIM:
+                            count_padded += 1
+                        else:
+                            count_truncated += 1
+            except Exception:
+                pass
+        total = count_ok + count_padded + count_truncated
+        if total > 0:
+            print(f"[+] 原始批处理PE维度汇总：total={total}，ok={count_ok}，padded={count_padded}，truncated={count_truncated}")
+            from config.config import SCAN_OUTPUT_DIR, PE_DIM_SUMMARY_RAW
+            os.makedirs(SCAN_OUTPUT_DIR, exist_ok=True)
+            with open(PE_DIM_SUMMARY_RAW, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'total': int(total),
+                    'ok': int(count_ok),
+                    'padded': int(count_padded),
+                    'truncated': int(count_truncated),
+                    'pe_dim': int(PE_FEATURE_VECTOR_DIM)
+                }, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
     file_names = [os.path.relpath(f, output_dir) for f in output_files]
     return file_names, labels
 
@@ -168,6 +237,10 @@ def load_incremental_dataset(data_dir, max_file_size=DEFAULT_MAX_FILE_SIZE):
         file_names.append(file_name)
     features_list = []
     valid_file_names = []
+    from config.config import PE_FEATURE_VECTOR_DIM
+    count_ok = 0
+    count_padded = 0
+    count_truncated = 0
     for i, file_path in enumerate(tqdm(valid_files, desc="Extracting incremental features")):
         try:
             with np.load(file_path) as data:
@@ -177,16 +250,26 @@ def load_incremental_dataset(data_dir, max_file_size=DEFAULT_MAX_FILE_SIZE):
                     if pe_features.ndim > 1:
                         pe_features = pe_features.flatten()
                 else:
-                    pe_features = np.zeros(1000, dtype=np.float32)
+                    pe_features = np.zeros(PE_FEATURE_VECTOR_DIM, dtype=np.float32)
                 orig_length = data['orig_length'] if 'orig_length' in data else max_file_size
             if len(byte_sequence) > max_file_size:
                 byte_sequence = byte_sequence[:max_file_size]
             else:
                 byte_sequence = np.pad(byte_sequence, (0, max_file_size - len(byte_sequence)), 'constant')
-            if len(pe_features) != 1000:
-                fixed_pe_features = np.zeros(1000, dtype=np.float32)
-                fixed_pe_features[:min(len(pe_features), 1000)] = pe_features[:min(len(pe_features), 1000)]
+            orig_pe_len = len(pe_features)
+            status = 'ok'
+            if orig_pe_len != PE_FEATURE_VECTOR_DIM:
+                fixed_pe_features = np.zeros(PE_FEATURE_VECTOR_DIM, dtype=np.float32)
+                copy_len = min(orig_pe_len, PE_FEATURE_VECTOR_DIM)
+                fixed_pe_features[:copy_len] = pe_features[:copy_len]
                 pe_features = fixed_pe_features
+                status = 'padded' if orig_pe_len < PE_FEATURE_VECTOR_DIM else 'truncated'
+            if status == 'ok':
+                count_ok += 1
+            elif status == 'padded':
+                count_padded += 1
+            else:
+                count_truncated += 1
             features = extract_statistical_features(byte_sequence, pe_features, int(orig_length))
             features_list.append(features)
             valid_file_names.append(file_names[i])
@@ -204,4 +287,21 @@ def load_incremental_dataset(data_dir, max_file_size=DEFAULT_MAX_FILE_SIZE):
     y = np.array(labels[:len(features_list)])
     print(f"[+] Incremental feature extraction completed, feature dimension: {X.shape[1]}")
     print(f"[+] Valid samples: {X.shape[0]}")
+    try:
+        total = count_ok + count_padded + count_truncated
+        if total > 0:
+            print(f"[+] PE维度汇总：total={total}，ok={count_ok}，padded={count_padded}，truncated={count_truncated}")
+            from config.config import SCAN_OUTPUT_DIR, PE_DIM_SUMMARY_INCREMENTAL
+            os.makedirs(SCAN_OUTPUT_DIR, exist_ok=True)
+            with open(PE_DIM_SUMMARY_INCREMENTAL, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'total': int(total),
+                    'ok': int(count_ok),
+                    'padded': int(count_padded),
+                    'truncated': int(count_truncated),
+                    'feature_dim': int(X.shape[1]),
+                    'pe_dim': int(PE_FEATURE_VECTOR_DIM)
+                }, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
     return X, y, valid_file_names

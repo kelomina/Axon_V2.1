@@ -216,3 +216,4 @@ hdbscan_cluster_results
 reports
 extracted_features.pkl
 tests
+scan_results

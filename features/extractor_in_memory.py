@@ -138,6 +138,7 @@ def extract_enhanced_pe_features(file_path):
             api_names = []
             dll_names = []
             features['imports_count'] = len(pe.DIRECTORY_ENTRY_IMPORT)
+            features['import_ordinal_only_count'] = 0
             for entry in pe.DIRECTORY_ENTRY_IMPORT:
                 dll_name = entry.dll.decode('utf-8').lower() if entry.dll else ''
                 dll_names.append(dll_name)
@@ -146,6 +147,12 @@ def extract_enhanced_pe_features(file_path):
                         func_name = imp.name.decode('utf-8')
                         imports.append((dll_name, func_name))
                         api_names.append(func_name)
+                    else:
+                        try:
+                            if hasattr(imp, 'ordinal') and imp.ordinal is not None:
+                                features['import_ordinal_only_count'] = features.get('import_ordinal_only_count', 0) + 1
+                        except Exception:
+                            pass
             features['unique_imports'] = len(set(imports))
             features['unique_dlls'] = len(set(dll_names))
             features['unique_apis'] = len(set(api_names))
@@ -156,6 +163,41 @@ def extract_enhanced_pe_features(file_path):
                 features['dll_name_min_length'] = np.min(dll_name_lengths)
             imported_system_dlls = set(dll.split('.')[0].lower() for dll in dll_names if dll) & set(SYSTEM_DLLS)
             features['imported_system_dlls_count'] = len(imported_system_dlls)
+            try:
+                if dll_names:
+                    dll_counts = {}
+                    for n in dll_names:
+                        if n:
+                            dll_counts[n] = dll_counts.get(n, 0) + 1
+                    total = sum(dll_counts.values())
+                    p = np.array(list(dll_counts.values()), dtype=np.float64) / float(total) if total > 0 else np.array([], dtype=np.float64)
+                    p = p[p > 0]
+                    features['dll_imports_entropy'] = float((-np.sum(p * np.log2(p)) / 8.0) if p.size > 0 else 0.0)
+                else:
+                    features['dll_imports_entropy'] = 0.0
+                if api_names:
+                    api_counts = {}
+                    for n in api_names:
+                        if n:
+                            api_counts[n] = api_counts.get(n, 0) + 1
+                    total = sum(api_counts.values())
+                    p = np.array(list(api_counts.values()), dtype=np.float64) / float(total) if total > 0 else np.array([], dtype=np.float64)
+                    p = p[p > 0]
+                    features['api_imports_entropy'] = float((-np.sum(p * np.log2(p)) / 8.0) if p.size > 0 else 0.0)
+                else:
+                    features['api_imports_entropy'] = 0.0
+            except Exception:
+                features['dll_imports_entropy'] = 0.0
+                features['api_imports_entropy'] = 0.0
+            features['imported_system_dlls_ratio'] = features['imported_system_dlls_count'] / (features['unique_dlls'] + 1)
+            try:
+                if api_names:
+                    syscall_like = [n for n in api_names if n.lower().startswith('nt') or n.lower().startswith('zw')]
+                    features['syscall_api_ratio'] = len(syscall_like) / (len(api_names) + 1)
+                else:
+                    features['syscall_api_ratio'] = 0.0
+            except Exception:
+                features['syscall_api_ratio'] = 0.0
         else:
             features['unique_imports'] = 0
             features['unique_dlls'] = 0
@@ -164,6 +206,11 @@ def extract_enhanced_pe_features(file_path):
             features['dll_name_max_length'] = 0
             features['dll_name_min_length'] = 0
             features['imported_system_dlls_count'] = 0
+            features['dll_imports_entropy'] = 0.0
+            features['api_imports_entropy'] = 0.0
+            features['imported_system_dlls_ratio'] = 0.0
+            features['syscall_api_ratio'] = 0.0
+            features['import_ordinal_only_count'] = 0
         if hasattr(pe, 'DIRECTORY_ENTRY_EXPORT'):
             features['exports_count'] = len(pe.DIRECTORY_ENTRY_EXPORT.symbols)
             export_names = []
@@ -201,7 +248,10 @@ def extract_enhanced_pe_features(file_path):
             rwx_sections_count = 0
             non_standard_executable_sections_count = 0
             executable_writable_sections = 0
+            alignment_mismatch_count = 0
             common_executable_section_names = {'.text','text','.code'}
+            file_align = getattr(pe.OPTIONAL_HEADER, 'FileAlignment', 0) if hasattr(pe, 'OPTIONAL_HEADER') else 0
+            sect_align = getattr(pe.OPTIONAL_HEADER, 'SectionAlignment', 0) if hasattr(pe, 'OPTIONAL_HEADER') else 0
             for section in pe.sections:
                 try:
                     name = section.Name.decode('utf-8', 'ignore').strip('\x00')
@@ -223,6 +273,13 @@ def extract_enhanced_pe_features(file_path):
                     if (section.Characteristics & 0x20000000) and (section.Characteristics & 0x80000000):
                         rwx_sections_count += 1
                         executable_writable_sections += 1
+                    try:
+                        if file_align and (section.SizeOfRawData % file_align != 0):
+                            alignment_mismatch_count += 1
+                        if sect_align and (section.VirtualSize % sect_align != 0):
+                            alignment_mismatch_count += 1
+                    except Exception:
+                        pass
                 except Exception:
                     pass
             features['section_names_count'] = len(section_names)
@@ -247,6 +304,8 @@ def extract_enhanced_pe_features(file_path):
             features['non_standard_executable_sections_count'] = non_standard_executable_sections_count
             features['executable_writable_sections'] = executable_writable_sections
             features['executable_code_density'] = code_section_size / (features['section_total_size'] + 1)
+            features['alignment_mismatch_count'] = alignment_mismatch_count
+            features['alignment_mismatch_ratio'] = alignment_mismatch_count / ((len(section_names) * 2) + 1)
             try:
                 max_end = max((getattr(s, 'PointerToRawData', 0) + getattr(s, 'SizeOfRawData', 0)) for s in pe.sections) if hasattr(pe, 'sections') else 0
             except Exception:
@@ -350,6 +409,24 @@ def extract_enhanced_pe_features(file_path):
             features['has_seh'] = 0
             features['has_guard_cf'] = 0
         features['has_resources'] = 1 if hasattr(pe, 'DIRECTORY_ENTRY_RESOURCE') else 0
+        try:
+            if hasattr(pe, 'DIRECTORY_ENTRY_RESOURCE') and hasattr(pe.DIRECTORY_ENTRY_RESOURCE, 'entries'):
+                def count_resource_entries(entries):
+                    cnt = 0
+                    for e in entries:
+                        try:
+                            if hasattr(e, 'directory') and hasattr(e.directory, 'entries'):
+                                cnt += count_resource_entries(e.directory.entries)
+                            elif hasattr(e, 'data'):
+                                cnt += 1
+                        except Exception:
+                            pass
+                    return cnt
+                features['resources_count'] = count_resource_entries(pe.DIRECTORY_ENTRY_RESOURCE.entries)
+            else:
+                features['resources_count'] = 0
+        except Exception:
+            features['resources_count'] = 0
         features['has_debug_info'] = 1 if hasattr(pe, 'DIRECTORY_ENTRY_DEBUG') else 0
         features['has_tls'] = 1 if hasattr(pe, 'DIRECTORY_ENTRY_TLS') else 0
         features['has_relocs'] = 1 if hasattr(pe, 'DIRECTORY_ENTRY_BASERELOC') else 0
@@ -362,6 +439,11 @@ def extract_enhanced_pe_features(file_path):
         except Exception:
             features['timestamp'] = 0
             features['timestamp_year'] = 0
+        try:
+            ep = getattr(pe.OPTIONAL_HEADER, 'AddressOfEntryPoint', 0)
+            features['entry_point_ratio'] = float(ep) / float(file_size + 1)
+        except Exception:
+            features['entry_point_ratio'] = 0.0
         try:
             sec_dir = pe.OPTIONAL_HEADER.DATA_DIRECTORY[pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_SECURITY']]
             sig_size = getattr(sec_dir, 'Size', 0)
@@ -438,7 +520,9 @@ def extract_enhanced_pe_features(file_path):
             'high_entropy_ratio','low_entropy_ratio','entropy_change_rate','entropy_change_std','executable_sections_count',
             'writable_sections_count','readable_sections_count','executable_sections_ratio','writable_sections_ratio',
             'readable_sections_ratio','executable_code_density','non_standard_executable_sections_count','rwx_sections_count',
-            'rwx_sections_ratio','special_char_ratio','long_sections_ratio','short_sections_ratio'
+            'rwx_sections_ratio','special_char_ratio','long_sections_ratio','short_sections_ratio','dll_imports_entropy',
+            'api_imports_entropy','imported_system_dlls_ratio','resources_count','alignment_mismatch_count','alignment_mismatch_ratio','entry_point_ratio',
+            'syscall_api_ratio','import_ordinal_only_count'
         ]
         for key in default_keys:
             features[key] = 0
@@ -501,7 +585,9 @@ def extract_combined_pe_features(file_path):
         'entropy_change_rate','entropy_change_std','executable_sections_count','writable_sections_count',
         'readable_sections_count','executable_sections_ratio','writable_sections_ratio','readable_sections_ratio',
         'executable_code_density','non_standard_executable_sections_count','rwx_sections_count','rwx_sections_ratio',
-        'special_char_ratio','long_sections_ratio','short_sections_ratio'
+        'special_char_ratio','long_sections_ratio','short_sections_ratio','dll_imports_entropy','api_imports_entropy',
+        'imported_system_dlls_ratio','resources_count','alignment_mismatch_count','alignment_mismatch_ratio','entry_point_ratio',
+        'syscall_api_ratio','import_ordinal_only_count'
     ]
     for sec in COMMON_SECTIONS:
         feature_order.append(f'has_{sec}_section')
@@ -530,6 +616,13 @@ def extract_combined_pe_features(file_path):
         combined_vector /= norm
     else:
         combined_vector = np.zeros(PE_FEATURE_VECTOR_DIM, dtype=np.float32)
+    try:
+        mapped_keys = min(len(feature_order), PE_FEATURE_VECTOR_DIM - LIGHTWEIGHT_FEATURE_DIM)
+        truncated_flag = 1 if len(feature_order) > (PE_FEATURE_VECTOR_DIM - LIGHTWEIGHT_FEATURE_DIM) else 0
+        padded_flag = 1 if len(feature_order) < (PE_FEATURE_VECTOR_DIM - LIGHTWEIGHT_FEATURE_DIM) else 0
+        #print(f"[+] PE特征维度={PE_FEATURE_VECTOR_DIM}，已映射键数={mapped_keys}，截断={truncated_flag}，填充={padded_flag}")
+    except Exception:
+        pass
     return combined_vector
 
 def extract_features_in_memory(input_file_path, max_file_size=DEFAULT_MAX_FILE_SIZE):

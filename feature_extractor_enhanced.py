@@ -682,7 +682,7 @@ def extract_combined_pe_features(file_path):
     ])
 
     for i, key in enumerate(feature_order):
-        if 256 + i >= 1000:
+        if 256 + i >= PE_FEATURE_VECTOR_DIM:
             break
 
         if key in all_features:
@@ -704,7 +704,7 @@ def extract_combined_pe_features(file_path):
     if norm > 0 and not np.isnan(norm):
         combined_vector /= norm
     else:
-        combined_vector = np.zeros(1000, dtype=np.float32)
+        combined_vector = np.zeros(PE_FEATURE_VECTOR_DIM, dtype=np.float32)
 
     return combined_vector
 

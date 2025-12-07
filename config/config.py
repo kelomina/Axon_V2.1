@@ -46,8 +46,8 @@ ENTROPY_SAMPLE_SIZE = 10240
 LIGHTWEIGHT_FEATURE_DIM = 256
 # LIGHTWEIGHT_FEATURE_SCALE：轻量特征缩放系数；用途：融合时权重调整；推荐值：1.5（1.0-2.0）
 LIGHTWEIGHT_FEATURE_SCALE = 1.5
-# PE_FEATURE_VECTOR_DIM：综合特征向量总维度；用途：模型输入维度；推荐值：1000
-PE_FEATURE_VECTOR_DIM = 1000
+# PE_FEATURE_VECTOR_DIM：综合特征向量总维度；用途：模型输入维度；推荐值：1500
+PE_FEATURE_VECTOR_DIM = 1500
 # SIZE_NORM_MAX：文件大小归一化上限；用途：避免尺度过大；推荐值：100MB
 SIZE_NORM_MAX = 128 * 1024 * 1024
 # TIMESTAMP_MAX/TIMESTAMP_YEAR_*：时间戳归一化参数；用途：规范时间特征；推荐值：MAX=2147483647，范围 1970-2038
@@ -101,6 +101,9 @@ DEFAULT_SERVE_PORT = 8000
 SCAN_CACHE_PATH = os.path.join(PROJECT_ROOT, 'scan_cache.json')
 # SCAN_OUTPUT_DIR：扫描结果输出目录；用途：保存 JSON/CSV 结果；推荐值：scan_results
 SCAN_OUTPUT_DIR = os.path.join(PROJECT_ROOT, 'scan_results')
+PE_DIM_SUMMARY_DATASET = os.path.join(SCAN_OUTPUT_DIR, 'pe_dim_summary_dataset.json')
+PE_DIM_SUMMARY_INCREMENTAL = os.path.join(SCAN_OUTPUT_DIR, 'pe_dim_summary_incremental.json')
+PE_DIM_SUMMARY_RAW = os.path.join(SCAN_OUTPUT_DIR, 'pe_dim_summary_raw.json')
 # HDBSCAN_SAVE_DIR：聚类结果目录；用途：保存标签与可视化；推荐值：hdbscan_cluster_results
 HDBSCAN_SAVE_DIR = os.path.join(PROJECT_ROOT, 'hdbscan_cluster_results')
 
