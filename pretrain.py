@@ -177,7 +177,8 @@ def main(args):
 
     save_model(model, MODEL_PATH)
 
-    print("\n[*] Top 20 important features:")
+    from config.config import EVAL_TOP_FEATURE_COUNT
+    print(f"\n[*] Top {EVAL_TOP_FEATURE_COUNT} important features:")
     feature_importance = model.feature_importance(importance_type='gain')
     indices_sorted = np.argsort(feature_importance)[::-1]
     def get_feature_semantics(index):
@@ -257,7 +258,6 @@ def main(args):
             m = order[k]
             return m
         return 'PE特征'
-    from config.config import EVAL_TOP_FEATURE_COUNT
     for rank, idx in enumerate(indices_sorted[:EVAL_TOP_FEATURE_COUNT], 1):
         semantics = get_feature_semantics(idx)
         print(f"    {rank:2d}. feature_{idx}: {feature_importance[idx]:.2f} ({semantics})")
