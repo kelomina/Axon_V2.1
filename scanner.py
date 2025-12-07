@@ -11,7 +11,7 @@ import shutil
 import argparse
 from models.family_classifier import FamilyClassifier
 from features.extractor_in_memory import extract_features_in_memory
-from config.config import MODEL_PATH, FAMILY_CLASSIFIER_PATH, DEFAULT_MAX_FILE_SIZE, SCAN_CACHE_PATH, SCAN_OUTPUT_DIR, HELP_LIGHTGBM_MODEL_PATH, HELP_FAMILY_CLASSIFIER_PATH, HELP_CACHE_FILE, HELP_FILE_PATH, HELP_DIR_PATH, HELP_RECURSIVE, HELP_OUTPUT_PATH, HELP_MAX_FILE_SIZE, ENV_ALLOWED_SCAN_ROOT, SCAN_PREDICTION_THRESHOLD
+from config.config import MODEL_PATH, FAMILY_CLASSIFIER_PATH, DEFAULT_MAX_FILE_SIZE, SCAN_CACHE_PATH, SCAN_OUTPUT_DIR, HELP_LIGHTGBM_MODEL_PATH, HELP_FAMILY_CLASSIFIER_PATH, HELP_CACHE_FILE, HELP_FILE_PATH, HELP_DIR_PATH, HELP_RECURSIVE, HELP_OUTPUT_PATH, HELP_MAX_FILE_SIZE, ENV_ALLOWED_SCAN_ROOT, PREDICTION_THRESHOLD
 
 
 def validate_path(path):
@@ -164,7 +164,7 @@ class MalwareScanner:
             feature_vector = features.reshape(1, -1)
             prediction = self.binary_classifier.predict(feature_vector)
 
-            is_malware = prediction[0] > SCAN_PREDICTION_THRESHOLD
+            is_malware = prediction[0] > PREDICTION_THRESHOLD
             confidence = prediction[0] if is_malware else (1 - prediction[0])
 
             return is_malware, confidence

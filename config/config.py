@@ -151,8 +151,7 @@ ENV_ALLOWED_SCAN_ROOT = 'SCANNER_ALLOWED_SCAN_ROOT'
 
 
 # 评估与训练细节参数：控制可视化与学习率策略
-# SCAN_PREDICTION_THRESHOLD：恶意概率阈值；用途：二分类输出转标签；推荐值：0.85-0.95（生产 0.90）
-SCAN_PREDICTION_THRESHOLD = 0.95
+PREDICTION_THRESHOLD = 0.96
 # VIS_SAMPLE_SIZE：可视化采样数；用途：绘图子样本大小；推荐值：5000-20000（默认 10000）
 VIS_SAMPLE_SIZE = 20000
 # VIS_TSNE_PERPLEXITY：t-SNE 困惑度；用途：嵌入稳定性与结构；推荐值：30（10-50）
@@ -161,10 +160,8 @@ VIS_TSNE_PERPLEXITY = 30
 PCA_DIMENSION_FOR_CLUSTERING = 50
 # EVAL_HIST_BINS：评估直方图分箱；用途：概率分布可视化精度；推荐值：50（30-100）
 EVAL_HIST_BINS = 100
-# EVAL_PREDICTION_THRESHOLD：评估恶意概率阈值；用途：将概率转标签以计算指标；推荐值：0.5（按验证集校准）
-EVAL_PREDICTION_THRESHOLD = 0.95
-# EVAL_TOP_FEATURE_COUNT：Top 特征数量；用途：训练后输出前 N 个重要特征；推荐值：20（10-50）
 EVAL_TOP_FEATURE_COUNT = 50
+# EVAL_TOP_FEATURE_COUNT：Top 特征数量；用途：训练后输出前 N 个重要特征；推荐值：20（10-50）
 # EVAL_FONT_FAMILY：评估图中文字体；用途：确保中文标签正常显示；推荐值：['SimHei','Microsoft YaHei']
 EVAL_FONT_FAMILY = ['SimHei', 'Microsoft YaHei']
 # DEFAULT_TEST_SIZE：测试集比例；用途：数据集划分的测试集占比；推荐值：0.1（0.1-0.2）

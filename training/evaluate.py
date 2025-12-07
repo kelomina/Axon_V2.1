@@ -3,12 +3,12 @@ import numpy as np
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, precision_score
 import matplotlib.pyplot as plt
 import seaborn as sns
-from config.config import MODEL_EVAL_FIG_DIR, MODEL_EVAL_FIG_PATH, EVAL_HIST_BINS, EVAL_PREDICTION_THRESHOLD, EVAL_FONT_FAMILY
+from config.config import MODEL_EVAL_FIG_DIR, MODEL_EVAL_FIG_PATH, EVAL_HIST_BINS, PREDICTION_THRESHOLD, EVAL_FONT_FAMILY
 
 def evaluate_model(model, X_test, y_test, files_test=None):
     print("[*] Evaluating model...")
     y_pred_proba = model.predict(X_test, num_iteration=model.best_iteration)
-    y_pred = (y_pred_proba > EVAL_PREDICTION_THRESHOLD).astype(int)
+    y_pred = (y_pred_proba > PREDICTION_THRESHOLD).astype(int)
     accuracy = accuracy_score(y_test, y_pred)
     print(f"[+] Accuracy: {accuracy:.4f}")
     print("\n[*] Classification report:")
