@@ -3,7 +3,7 @@ import numpy as np
 import pefile
 import hashlib
 from utils.path_utils import validate_path
-from config.config import DEFAULT_MAX_FILE_SIZE, ENTROPY_BLOCK_SIZE, ENTROPY_SAMPLE_SIZE, PE_FEATURE_VECTOR_DIM, LIGHTWEIGHT_FEATURE_DIM, LIGHTWEIGHT_FEATURE_SCALE, SIZE_NORM_MAX, TIMESTAMP_MAX, TIMESTAMP_YEAR_BASE, TIMESTAMP_YEAR_MAX, COMMON_SECTIONS, SYSTEM_DLLS, LARGE_TRAILING_DATA_SIZE
+from config.config import DEFAULT_MAX_FILE_SIZE, ENTROPY_BLOCK_SIZE, ENTROPY_SAMPLE_SIZE, PE_FEATURE_VECTOR_DIM, LIGHTWEIGHT_FEATURE_DIM, LIGHTWEIGHT_FEATURE_SCALE, SIZE_NORM_MAX, TIMESTAMP_MAX, TIMESTAMP_YEAR_BASE, TIMESTAMP_YEAR_MAX, COMMON_SECTIONS, SYSTEM_DLLS, LARGE_TRAILING_DATA_SIZE, ENTROPY_HIGH_THRESHOLD, SECTION_ENTROPY_MIN_SIZE, OVERLAY_ENTROPY_MIN_SIZE, PACKER_SECTION_KEYWORDS, API_CATEGORY_NETWORK, API_CATEGORY_PROCESS, API_CATEGORY_FILESYSTEM, API_CATEGORY_REGISTRY
 
 def calculate_byte_entropy(byte_sequence, block_size=ENTROPY_BLOCK_SIZE):
     if byte_sequence is None or len(byte_sequence) == 0:
@@ -139,6 +139,7 @@ def extract_enhanced_pe_features(file_path):
             dll_names = []
             features['imports_count'] = len(pe.DIRECTORY_ENTRY_IMPORT)
             features['import_ordinal_only_count'] = 0
+            total_import_functions = 0
             for entry in pe.DIRECTORY_ENTRY_IMPORT:
                 dll_name = entry.dll.decode('utf-8').lower() if entry.dll else ''
                 dll_names.append(dll_name)
@@ -147,15 +148,25 @@ def extract_enhanced_pe_features(file_path):
                         func_name = imp.name.decode('utf-8')
                         imports.append((dll_name, func_name))
                         api_names.append(func_name)
+                        total_import_functions += 1
                     else:
                         try:
                             if hasattr(imp, 'ordinal') and imp.ordinal is not None:
                                 features['import_ordinal_only_count'] = features.get('import_ordinal_only_count', 0) + 1
+                                total_import_functions += 1
                         except Exception:
                             pass
             features['unique_imports'] = len(set(imports))
             features['unique_dlls'] = len(set(dll_names))
             features['unique_apis'] = len(set(api_names))
+            try:
+                features['import_ordinal_only_ratio'] = features['import_ordinal_only_count'] / (total_import_functions + 1)
+            except Exception:
+                features['import_ordinal_only_ratio'] = 0.0
+            try:
+                features['avg_imports_per_dll'] = total_import_functions / (features['unique_dlls'] + 1)
+            except Exception:
+                features['avg_imports_per_dll'] = 0.0
             if dll_names:
                 dll_name_lengths = [len(name) for name in dll_names if name]
                 features['dll_name_avg_length'] = np.mean(dll_name_lengths)
@@ -198,6 +209,38 @@ def extract_enhanced_pe_features(file_path):
                     features['syscall_api_ratio'] = 0.0
             except Exception:
                 features['syscall_api_ratio'] = 0.0
+            try:
+                if imports:
+                    net_cnt = 0
+                    proc_cnt = 0
+                    fs_cnt = 0
+                    reg_cnt = 0
+                    for dll, func in imports:
+                        dl = (dll or '').lower()
+                        fn = (func or '').lower()
+                        if any(k in dl or k in fn for k in API_CATEGORY_NETWORK):
+                            net_cnt += 1
+                        if any(k in dl or k in fn for k in API_CATEGORY_PROCESS):
+                            proc_cnt += 1
+                        if any(k in dl or k in fn for k in API_CATEGORY_FILESYSTEM):
+                            fs_cnt += 1
+                        if any(k in dl or k in fn for k in API_CATEGORY_REGISTRY):
+                            reg_cnt += 1
+                    denom = total_import_functions + 1
+                    features['api_network_ratio'] = net_cnt / denom
+                    features['api_process_ratio'] = proc_cnt / denom
+                    features['api_filesystem_ratio'] = fs_cnt / denom
+                    features['api_registry_ratio'] = reg_cnt / denom
+                else:
+                    features['api_network_ratio'] = 0.0
+                    features['api_process_ratio'] = 0.0
+                    features['api_filesystem_ratio'] = 0.0
+                    features['api_registry_ratio'] = 0.0
+            except Exception:
+                features['api_network_ratio'] = 0.0
+                features['api_process_ratio'] = 0.0
+                features['api_filesystem_ratio'] = 0.0
+                features['api_registry_ratio'] = 0.0
         else:
             features['unique_imports'] = 0
             features['unique_dlls'] = 0
@@ -211,6 +254,12 @@ def extract_enhanced_pe_features(file_path):
             features['imported_system_dlls_ratio'] = 0.0
             features['syscall_api_ratio'] = 0.0
             features['import_ordinal_only_count'] = 0
+            features['import_ordinal_only_ratio'] = 0.0
+            features['avg_imports_per_dll'] = 0.0
+            features['api_network_ratio'] = 0.0
+            features['api_process_ratio'] = 0.0
+            features['api_filesystem_ratio'] = 0.0
+            features['api_registry_ratio'] = 0.0
         if hasattr(pe, 'DIRECTORY_ENTRY_EXPORT'):
             features['exports_count'] = len(pe.DIRECTORY_ENTRY_EXPORT.symbols)
             export_names = []
@@ -223,21 +272,28 @@ def extract_enhanced_pe_features(file_path):
                 features['export_name_max_length'] = np.max(export_name_lengths)
                 features['export_name_min_length'] = np.min(export_name_lengths)
                 features['exports_density'] = len(export_names) / (file_size + 1)
+                try:
+                    features['exports_name_ratio'] = len(export_names) / (features['exports_count'] + 1)
+                except Exception:
+                    features['exports_name_ratio'] = 0.0
             else:
                 features['export_name_avg_length'] = 0
                 features['export_name_max_length'] = 0
                 features['export_name_min_length'] = 0
                 features['exports_density'] = 0
+                features['exports_name_ratio'] = 0.0
         else:
             features['exports_count'] = 0
             features['export_name_avg_length'] = 0
             features['export_name_max_length'] = 0
             features['export_name_min_length'] = 0
             features['exports_density'] = 0
+            features['exports_name_ratio'] = 0.0
         if hasattr(pe, 'sections'):
             section_names = []
             section_sizes = []
             section_vsizes = []
+            section_entropies = []
             code_section_size = 0
             data_section_size = 0
             code_section_vsize = 0
@@ -258,6 +314,19 @@ def extract_enhanced_pe_features(file_path):
                     section_names.append(name)
                     section_sizes.append(section.SizeOfRawData)
                     section_vsizes.append(section.VirtualSize)
+                    try:
+                        raw = section.get_data()
+                        arr = np.frombuffer(raw, dtype=np.uint8) if raw else np.array([], dtype=np.uint8)
+                        if arr.size >= SECTION_ENTROPY_MIN_SIZE:
+                            hist = np.bincount(arr, minlength=256)
+                            prob = hist / arr.size
+                            prob = prob[prob > 0]
+                            se = float((-np.sum(prob * np.log2(prob)) / 8.0) if prob.size > 0 else 0.0)
+                        else:
+                            se = 0.0
+                    except Exception:
+                        se = 0.0
+                    section_entropies.append(se)
                     if section.Characteristics & 0x20000000:
                         executable_sections_count += 1
                         code_section_size += section.SizeOfRawData
@@ -289,6 +358,19 @@ def extract_enhanced_pe_features(file_path):
             features['avg_section_vsize'] = np.mean(section_vsizes) if section_vsizes else 0
             features['max_section_size'] = np.max(section_sizes) if section_sizes else 0
             features['min_section_size'] = np.min(section_sizes) if section_sizes else 0
+            if section_entropies:
+                features['section_entropy_avg'] = float(np.mean(section_entropies))
+                features['section_entropy_min'] = float(np.min(section_entropies))
+                features['section_entropy_max'] = float(np.max(section_entropies))
+                features['section_entropy_std'] = float(np.std(section_entropies))
+                high_entropy_secs = sum(1 for e in section_entropies if e > ENTROPY_HIGH_THRESHOLD)
+                features['packed_sections_ratio'] = high_entropy_secs / (len(section_entropies) + 1)
+            else:
+                features['section_entropy_avg'] = 0.0
+                features['section_entropy_min'] = 0.0
+                features['section_entropy_max'] = 0.0
+                features['section_entropy_std'] = 0.0
+                features['packed_sections_ratio'] = 0.0
             features['code_section_ratio'] = code_section_size / (features['section_total_size'] + 1)
             features['data_section_ratio'] = data_section_size / (features['section_total_size'] + 1)
             features['code_vsize_ratio'] = code_section_vsize / (features['section_total_vsize'] + 1)
@@ -314,6 +396,23 @@ def extract_enhanced_pe_features(file_path):
             features['trailing_data_size'] = trailing_size
             features['trailing_data_ratio'] = trailing_size / (file_size + 1)
             features['has_large_trailing_data'] = 1 if trailing_size >= LARGE_TRAILING_DATA_SIZE else 0
+            try:
+                if trailing_size >= OVERLAY_ENTROPY_MIN_SIZE:
+                    with open(valid_path, 'rb') as f:
+                        f.seek(max_end)
+                        overlay = np.fromfile(f, dtype=np.uint8, count=trailing_size)
+                    hist = np.bincount(overlay, minlength=256)
+                    prob = hist / overlay.size if overlay.size > 0 else np.array([], dtype=np.float64)
+                    prob = prob[prob > 0]
+                    oe = float((-np.sum(prob * np.log2(prob)) / 8.0) if prob.size > 0 else 0.0)
+                    features['overlay_entropy'] = oe
+                    features['overlay_high_entropy_flag'] = 1 if oe > ENTROPY_HIGH_THRESHOLD else 0
+                else:
+                    features['overlay_entropy'] = 0.0
+                    features['overlay_high_entropy_flag'] = 0
+            except Exception:
+                features['overlay_entropy'] = 0.0
+                features['overlay_high_entropy_flag'] = 0
             for sec in COMMON_SECTIONS:
                 features[f'has_{sec}_section'] = 1 if any(sec.lower() == n.lower() for n in section_names) else 0
             if section_sizes:
@@ -332,6 +431,16 @@ def extract_enhanced_pe_features(file_path):
                 features['has_mpress_section'] = 1 if any('mpress' in n for n in lower_names) else 0
                 features['has_aspack_section'] = 1 if any('aspack' in n for n in lower_names) else 0
                 features['has_themida_section'] = 1 if any('themida' in n for n in lower_names) else 0
+                try:
+                    hits = 0
+                    for kw in PACKER_SECTION_KEYWORDS:
+                        if any(kw in n for n in lower_names):
+                            hits += 1
+                    features['packer_keyword_hits_count'] = float(hits)
+                    features['packer_keyword_hits_ratio'] = hits / (len(section_names) + 1)
+                except Exception:
+                    features['packer_keyword_hits_count'] = 0.0
+                    features['packer_keyword_hits_ratio'] = 0.0
                 special_char_count = 0
                 total_chars = 0
                 for name in section_names:
@@ -429,7 +538,32 @@ def extract_enhanced_pe_features(file_path):
             features['resources_count'] = 0
         features['has_debug_info'] = 1 if hasattr(pe, 'DIRECTORY_ENTRY_DEBUG') else 0
         features['has_tls'] = 1 if hasattr(pe, 'DIRECTORY_ENTRY_TLS') else 0
+        try:
+            tls_cnt = 0
+            if hasattr(pe, 'DIRECTORY_ENTRY_TLS') and hasattr(pe.DIRECTORY_ENTRY_TLS, 'struct'):
+                addr = getattr(pe.DIRECTORY_ENTRY_TLS.struct, 'AddressOfCallBacks', 0)
+                tls_cnt = 1 if addr else 0
+            features['tls_callbacks_count'] = tls_cnt
+        except Exception:
+            features['tls_callbacks_count'] = 0
         features['has_relocs'] = 1 if hasattr(pe, 'DIRECTORY_ENTRY_BASERELOC') else 0
+        try:
+            if hasattr(pe, 'DIRECTORY_ENTRY_BASERELOC'):
+                blocks = pe.DIRECTORY_ENTRY_BASERELOC
+                features['reloc_blocks_count'] = len(blocks)
+                total_entries = 0
+                for b in blocks:
+                    try:
+                        total_entries += len(getattr(b, 'entries', []))
+                    except Exception:
+                        pass
+                features['reloc_entries_count'] = total_entries
+            else:
+                features['reloc_blocks_count'] = 0
+                features['reloc_entries_count'] = 0
+        except Exception:
+            features['reloc_blocks_count'] = 0
+            features['reloc_entries_count'] = 0
         features['has_exceptions'] = 1 if hasattr(pe, 'DIRECTORY_ENTRY_EXCEPTION') else 0
         try:
             tds = getattr(pe.FILE_HEADER, 'TimeDateStamp', 0)
@@ -442,8 +576,23 @@ def extract_enhanced_pe_features(file_path):
         try:
             ep = getattr(pe.OPTIONAL_HEADER, 'AddressOfEntryPoint', 0)
             features['entry_point_ratio'] = float(ep) / float(file_size + 1)
+            try:
+                ep_flag = 0
+                if hasattr(pe, 'sections'):
+                    for section in pe.sections:
+                        va = getattr(section, 'VirtualAddress', 0)
+                        vs = getattr(section, 'Misc_VirtualSize', getattr(section, 'VirtualSize', 0))
+                        if ep >= va and ep < va + vs:
+                            name = section.Name.decode('utf-8', 'ignore').strip('\x00').lower()
+                            common = {'.text','text','.code'}
+                            ep_flag = 0 if name in common else 1
+                            break
+                features['entry_in_nonstandard_section_flag'] = ep_flag
+            except Exception:
+                features['entry_in_nonstandard_section_flag'] = 0
         except Exception:
             features['entry_point_ratio'] = 0.0
+            features['entry_in_nonstandard_section_flag'] = 0
         try:
             sec_dir = pe.OPTIONAL_HEADER.DATA_DIRECTORY[pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_SECURITY']]
             sig_size = getattr(sec_dir, 'Size', 0)
@@ -504,10 +653,16 @@ def extract_enhanced_pe_features(file_path):
         except Exception:
             features['pe_header_size'] = 0
             features['header_size_ratio'] = 0
+        try:
+            ck = getattr(pe.OPTIONAL_HEADER, 'CheckSum', 0)
+            features['checksum_zero_flag'] = 1 if not ck else 0
+        except Exception:
+            features['checksum_zero_flag'] = 0
     except Exception:
         default_keys = [
             'sections_count','symbols_count','imports_count','exports_count','unique_imports','unique_dlls','unique_apis',
             'section_names_count','section_total_size','section_total_vsize','avg_section_size','avg_section_vsize',
+            'section_entropy_avg','section_entropy_min','section_entropy_max','section_entropy_std','packed_sections_ratio','overlay_entropy','overlay_high_entropy_flag','packer_keyword_hits_count','packer_keyword_hits_ratio',
             'subsystem','dll_characteristics','code_section_ratio','data_section_ratio','code_vsize_ratio','data_vsize_ratio',
             'has_nx_compat','has_aslr','has_seh','has_guard_cf','has_resources','has_debug_info','has_tls','has_relocs',
             'has_exceptions','dll_name_avg_length','dll_name_max_length','dll_name_min_length','section_name_avg_length',
@@ -522,7 +677,7 @@ def extract_enhanced_pe_features(file_path):
             'readable_sections_ratio','executable_code_density','non_standard_executable_sections_count','rwx_sections_count',
             'rwx_sections_ratio','special_char_ratio','long_sections_ratio','short_sections_ratio','dll_imports_entropy',
             'api_imports_entropy','imported_system_dlls_ratio','resources_count','alignment_mismatch_count','alignment_mismatch_ratio','entry_point_ratio',
-            'syscall_api_ratio','import_ordinal_only_count'
+            'syscall_api_ratio','import_ordinal_only_count','import_ordinal_only_ratio','avg_imports_per_dll','exports_name_ratio','entry_in_nonstandard_section_flag','tls_callbacks_count','reloc_blocks_count','reloc_entries_count','checksum_zero_flag','api_network_ratio','api_process_ratio','api_filesystem_ratio','api_registry_ratio'
         ]
         for key in default_keys:
             features[key] = 0
@@ -571,7 +726,7 @@ def extract_combined_pe_features(file_path):
     feature_order = [
         'size','log_size','sections_count','symbols_count','imports_count','exports_count',
         'unique_imports','unique_dlls','unique_apis','section_names_count','section_total_size',
-        'section_total_vsize','avg_section_size','avg_section_vsize','subsystem','dll_characteristics',
+        'section_total_vsize','avg_section_size','avg_section_vsize','section_entropy_avg','section_entropy_min','section_entropy_max','section_entropy_std','packed_sections_ratio','subsystem','dll_characteristics',
         'code_section_ratio','data_section_ratio','code_vsize_ratio','data_vsize_ratio',
         'has_nx_compat','has_aslr','has_seh','has_guard_cf','has_resources','has_debug_info',
         'has_tls','has_relocs','has_exceptions','dll_name_avg_length','dll_name_max_length',
@@ -587,7 +742,7 @@ def extract_combined_pe_features(file_path):
         'executable_code_density','non_standard_executable_sections_count','rwx_sections_count','rwx_sections_ratio',
         'special_char_ratio','long_sections_ratio','short_sections_ratio','dll_imports_entropy','api_imports_entropy',
         'imported_system_dlls_ratio','resources_count','alignment_mismatch_count','alignment_mismatch_ratio','entry_point_ratio',
-        'syscall_api_ratio','import_ordinal_only_count'
+        'syscall_api_ratio','import_ordinal_only_count','import_ordinal_only_ratio','avg_imports_per_dll','exports_name_ratio','entry_in_nonstandard_section_flag','tls_callbacks_count','reloc_blocks_count','reloc_entries_count','checksum_zero_flag','api_network_ratio','api_process_ratio','api_filesystem_ratio','api_registry_ratio','overlay_entropy','overlay_high_entropy_flag','packer_keyword_hits_count','packer_keyword_hits_ratio'
     ]
     for sec in COMMON_SECTIONS:
         feature_order.append(f'has_{sec}_section')

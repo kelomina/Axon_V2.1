@@ -4,7 +4,7 @@ import hashlib
 import pefile
 from typing import Optional
 
-from config.config import BENIGN_WHITELIST_PENDING_DIR, COLLECT_SOURCE_ROOT
+import config.config as cfg
 from utils.path_utils import validate_path
 
 
@@ -28,8 +28,11 @@ def is_pe_file(file_path: str) -> bool:
 
 def compute_sha256(file_path: str) -> Optional[str]:
     try:
+        valid_path = validate_path(file_path)
+        if not valid_path:
+            return None
         h = hashlib.sha256()
-        with open(file_path, 'rb') as f:
+        with open(valid_path, 'rb') as f:
             while True:
                 chunk = f.read(1024 * 1024)
                 if not chunk:
@@ -41,13 +44,18 @@ def compute_sha256(file_path: str) -> Optional[str]:
 
 
 def collect_pe_files(source_root: Optional[str] = None, dest_dir: Optional[str] = None) -> int:
-    src_root = source_root or COLLECT_SOURCE_ROOT
-    dst_dir = dest_dir or BENIGN_WHITELIST_PENDING_DIR
+    src_root = source_root or cfg.COLLECT_SOURCE_ROOT
+    dst_dir = dest_dir or cfg.BENIGN_WHITELIST_PENDING_DIR
     os.makedirs(dst_dir, exist_ok=True)
     total_copied = 0
     for root, _, files in os.walk(src_root):
         for name in files:
             src_path = os.path.join(root, name)
+            try:
+                if cfg.COLLECT_MAX_FILE_SIZE and os.stat(src_path).st_size > cfg.COLLECT_MAX_FILE_SIZE:
+                    continue
+            except Exception:
+                continue
             if not is_pe_file(src_path):
                 continue
             digest = compute_sha256(src_path)
@@ -71,4 +79,3 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
-

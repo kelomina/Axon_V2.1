@@ -153,6 +153,8 @@ ENV_SERVICE_PORT = 'SCANNER_SERVICE_PORT'
 ENV_ALLOWED_SCAN_ROOT = 'SCANNER_ALLOWED_SCAN_ROOT'
 
 COLLECT_SOURCE_ROOT = os.getenv(ENV_ALLOWED_SCAN_ROOT) or 'C:\\'
+COLLECT_ALLOWED_EXTENSIONS = ['.exe', '.dll']
+COLLECT_MAX_FILE_SIZE = SIZE_NORM_MAX
 
 
 
@@ -176,8 +178,8 @@ DEFAULT_TEST_SIZE = 0.2
 DEFAULT_RANDOM_STATE = 42
 # COMMON_SECTIONS：常见节名列表；用途：节存在布尔特征与结构判断；推荐值：['.text','.data','.rdata','.reloc','.rsrc']
 COMMON_SECTIONS = ['.text', '.data', '.rdata', '.reloc', '.rsrc']
-# PACKER_SECTION_KEYWORDS：打包器关键词；用途：基于节名识别常见打包器；推荐值：['upx','mpress','aspack','themida']
-PACKER_SECTION_KEYWORDS = ['upx', 'mpress', 'aspack', 'themida']
+# PACKER_SECTION_KEYWORDS：打包器关键词；用途：基于节名识别常见打包器；推荐值：按需扩展
+PACKER_SECTION_KEYWORDS = ['upx', 'mpress', 'aspack', 'themida', 'petite', 'pecompact', 'fsg']
 # SYSTEM_DLLS：系统 DLL 集合；用途：统计导入系统 DLL 的数量/占比；推荐值：常见基础系统库集合
 SYSTEM_DLLS = {'kernel32','user32','gdi32','advapi32','shell32','ole32','comctl32'}
 # ENTROPY_HIGH_THRESHOLD：高熵阈值；用途：计算高熵块占比；推荐值：0.8（0.7-0.9）
@@ -186,6 +188,10 @@ ENTROPY_HIGH_THRESHOLD = 0.8
 ENTROPY_LOW_THRESHOLD = 0.2
 # LARGE_TRAILING_DATA_SIZE：大尾部数据大小阈值（字节）；用途：识别异常附加数据；推荐值：1MB（512KB-4MB）
 LARGE_TRAILING_DATA_SIZE = 1024 * 1024
+# SECTION_ENTROPY_MIN_SIZE：节熵计算的最小字节数；用途：避免小样本噪声
+SECTION_ENTROPY_MIN_SIZE = 256
+# OVERLAY_ENTROPY_MIN_SIZE：叠加区熵计算的最小字节数；用途：稳定估计
+OVERLAY_ENTROPY_MIN_SIZE = 1024
 FP_WEIGHT_BASE = 5.0
 FP_WEIGHT_GROWTH_PER_ITER = 3.0
 FP_WEIGHT_MAX = 100.0
@@ -199,3 +205,8 @@ WARMUP_ROUNDS = 200
 WARMUP_START_LR = 0.001
 # WARMUP_TARGET_LR：暖启动目标学习率；用途：结束时学习率；推荐值：0.05（0.01-0.10）
 WARMUP_TARGET_LR = 0.1
+
+API_CATEGORY_NETWORK = ['ws2_32','wininet','winhttp','internet','socket','connect','send','recv','http','url']
+API_CATEGORY_PROCESS = ['createprocess','openprocess','terminateprocess','getprocaddress','loadlibrary','virtualallocex','writeprocessmemory']
+API_CATEGORY_FILESYSTEM = ['createfile','readfile','writefile','deletefile','movefile','copyfile','findfirstfile','findnextfile','setfileattributes','getfileattributes','getfilesize']
+API_CATEGORY_REGISTRY = ['regopenkey','regsetvalue','regcreatekey','regdeletekey','regqueryvalue','regenumkey','regclosekey']

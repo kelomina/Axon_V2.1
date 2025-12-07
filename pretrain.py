@@ -257,7 +257,7 @@ def main(args):
         order = [
             'size','log_size','sections_count','symbols_count','imports_count','exports_count',
             'unique_imports','unique_dlls','unique_apis','section_names_count','section_total_size',
-            'section_total_vsize','avg_section_size','avg_section_vsize','subsystem','dll_characteristics',
+            'section_total_vsize','avg_section_size','avg_section_vsize','section_entropy_avg','section_entropy_min','section_entropy_max','section_entropy_std','packed_sections_ratio','subsystem','dll_characteristics',
             'code_section_ratio','data_section_ratio','code_vsize_ratio','data_vsize_ratio',
             'has_nx_compat','has_aslr','has_seh','has_guard_cf','has_resources','has_debug_info',
             'has_tls','has_relocs','has_exceptions','dll_name_avg_length','dll_name_max_length',
@@ -272,8 +272,8 @@ def main(args):
             'readable_sections_count','executable_sections_ratio','writable_sections_ratio','readable_sections_ratio',
             'executable_code_density','non_standard_executable_sections_count','rwx_sections_count','rwx_sections_ratio',
             'special_char_ratio','long_sections_ratio','short_sections_ratio','has_.text_section','has_.data_section','has_.rdata_section','has_.reloc_section','has_.rsrc_section',
-            'has_signature','signature_size','version_info_present','company_name_len','product_name_len','file_version_len','original_filename_len',
-            'has_upx_section','has_mpress_section','has_aspack_section','has_themida_section','timestamp','timestamp_year'
+            'has_signature','signature_size','signature_has_signing_time','version_info_present','company_name_len','product_name_len','file_version_len','original_filename_len',
+            'has_upx_section','has_mpress_section','has_aspack_section','has_themida_section','api_network_ratio','api_process_ratio','api_filesystem_ratio','api_registry_ratio','overlay_entropy','overlay_high_entropy_flag','packer_keyword_hits_count','packer_keyword_hits_ratio','timestamp','timestamp_year'
         ]
         if k < len(order):
             m = order[k]
