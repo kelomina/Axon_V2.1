@@ -3,7 +3,7 @@ import numpy as np
 import pefile
 import hashlib
 from utils.path_utils import validate_path
-from config.config import DEFAULT_MAX_FILE_SIZE, ENTROPY_BLOCK_SIZE, ENTROPY_SAMPLE_SIZE, PE_FEATURE_VECTOR_DIM, LIGHTWEIGHT_FEATURE_DIM, LIGHTWEIGHT_FEATURE_SCALE, SIZE_NORM_MAX, TIMESTAMP_MAX, TIMESTAMP_YEAR_BASE, TIMESTAMP_YEAR_MAX, COMMON_SECTIONS, SYSTEM_DLLS
+from config.config import DEFAULT_MAX_FILE_SIZE, ENTROPY_BLOCK_SIZE, ENTROPY_SAMPLE_SIZE, PE_FEATURE_VECTOR_DIM, LIGHTWEIGHT_FEATURE_DIM, LIGHTWEIGHT_FEATURE_SCALE, SIZE_NORM_MAX, TIMESTAMP_MAX, TIMESTAMP_YEAR_BASE, TIMESTAMP_YEAR_MAX, COMMON_SECTIONS, SYSTEM_DLLS, LARGE_TRAILING_DATA_SIZE
 
 def calculate_byte_entropy(byte_sequence, block_size=ENTROPY_BLOCK_SIZE):
     if byte_sequence is None or len(byte_sequence) == 0:
@@ -199,6 +199,8 @@ def extract_enhanced_pe_features(file_path):
             writable_sections_count = 0
             readable_sections_count = 0
             rwx_sections_count = 0
+            non_standard_executable_sections_count = 0
+            executable_writable_sections = 0
             common_executable_section_names = {'.text','text','.code'}
             for section in pe.sections:
                 try:
@@ -211,7 +213,7 @@ def extract_enhanced_pe_features(file_path):
                         code_section_size += section.SizeOfRawData
                         code_section_vsize += section.VirtualSize
                         if name.lower() not in common_executable_section_names:
-                            pass
+                            non_standard_executable_sections_count += 1
                     if section.Characteristics & 0x80000000:
                         writable_sections_count += 1
                     if section.Characteristics & 0x40000000:
@@ -220,6 +222,7 @@ def extract_enhanced_pe_features(file_path):
                         data_section_vsize += section.VirtualSize
                     if (section.Characteristics & 0x20000000) and (section.Characteristics & 0x80000000):
                         rwx_sections_count += 1
+                        executable_writable_sections += 1
                 except Exception:
                     pass
             features['section_names_count'] = len(section_names)
@@ -241,6 +244,19 @@ def extract_enhanced_pe_features(file_path):
             features['readable_sections_ratio'] = readable_sections_count / (len(section_names) + 1)
             features['rwx_sections_count'] = rwx_sections_count
             features['rwx_sections_ratio'] = rwx_sections_count / (len(section_names) + 1)
+            features['non_standard_executable_sections_count'] = non_standard_executable_sections_count
+            features['executable_writable_sections'] = executable_writable_sections
+            features['executable_code_density'] = code_section_size / (features['section_total_size'] + 1)
+            try:
+                max_end = max((getattr(s, 'PointerToRawData', 0) + getattr(s, 'SizeOfRawData', 0)) for s in pe.sections) if hasattr(pe, 'sections') else 0
+            except Exception:
+                max_end = 0
+            trailing_size = max(0, file_size - max_end)
+            features['trailing_data_size'] = trailing_size
+            features['trailing_data_ratio'] = trailing_size / (file_size + 1)
+            features['has_large_trailing_data'] = 1 if trailing_size >= LARGE_TRAILING_DATA_SIZE else 0
+            for sec in COMMON_SECTIONS:
+                features[f'has_{sec}_section'] = 1 if any(sec.lower() == n.lower() for n in section_names) else 0
             if section_sizes:
                 features['section_size_std'] = np.std(section_sizes)
                 features['section_size_cv'] = np.std(section_sizes) / (np.mean(section_sizes) + 1e-8)
@@ -269,6 +285,9 @@ def extract_enhanced_pe_features(file_path):
             features['section_name_avg_length'] = 0
             features['section_name_max_length'] = 0
             features['section_name_min_length'] = 0
+            features['trailing_data_size'] = 0
+            features['trailing_data_ratio'] = 0
+            features['has_large_trailing_data'] = 0
             features['max_section_size'] = 0
             features['min_section_size'] = 0
             features['code_section_ratio'] = 0
