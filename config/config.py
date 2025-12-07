@@ -19,6 +19,7 @@ FEATURES_PKL_PATH = os.path.join(PROJECT_ROOT, 'extracted_features.pkl')
 FAMILY_CLASSIFIER_PATH = os.path.join(PROJECT_ROOT, 'hdbscan_cluster_results', 'family_classifier.pkl')
 # BENIGN_SAMPLES_DIR：良性样本目录；用途：训练/评估数据来源；推荐值：benign_samples
 BENIGN_SAMPLES_DIR = os.path.join(PROJECT_ROOT, 'benign_samples')
+BENIGN_WHITELIST_PENDING_DIR = os.path.join(BENIGN_SAMPLES_DIR, '待加入白名单')
 # MALICIOUS_SAMPLES_DIR：恶意样本目录；用途：训练/评估数据来源；推荐值：malicious_samples
 MALICIOUS_SAMPLES_DIR = os.path.join(PROJECT_ROOT, 'malicious_samples')
 
@@ -150,6 +151,8 @@ ENV_MAX_FILE_SIZE = 'SCANNER_MAX_FILE_SIZE'
 ENV_SERVICE_PORT = 'SCANNER_SERVICE_PORT'
 # ENV_ALLOWED_SCAN_ROOT：限制扫描根路径；用途：安全访问控制；推荐值：SCANNER_ALLOWED_SCAN_ROOT
 ENV_ALLOWED_SCAN_ROOT = 'SCANNER_ALLOWED_SCAN_ROOT'
+
+COLLECT_SOURCE_ROOT = os.getenv(ENV_ALLOWED_SCAN_ROOT) or 'C:\\'
 
 
 
