@@ -1,282 +1,181 @@
 # 神枢 - Axon V2
 
-基于机器学习的恶意软件检测和分类系统，使用LightGBM和深度学习技术实现恶意软件的检测和家族分类。
+基于机器学习的恶意软件检测与家族分类系统，核心由 LightGBM 二分类模型与基于 HDBSCAN 的家族识别组成，可通过命令行与 FastAPI 服务进行扫描与集成。
 
 ## 项目概述
 
-神枢 - Axon V2 是一个基于机器学习的恶意软件检测系统，能够：
+- 主要功能
+  - 恶意软件检测（二分类）：判断文件是否为恶意样本
+  - 家族识别（聚类 + 分类器）：对恶意样本进行家族归属或标记为未知家族
+  - 本地扫描与目录批量扫描，支持缓存与结果导出（JSON/CSV）
+  - 提供 HTTP 接口的扫描服务，便于系统集成
 
-1. 检测文件是否为恶意软件（二分类）
-2. 对恶意软件进行家族分类（多分类）
+- 技术栈与核心依赖
+  - Python、NumPy、Pandas、scikit-learn、LightGBM
+  - FastAPI + Uvicorn（服务端）
+  - fast-hdbscan（多核优化的 HDBSCAN 实现，用于家族聚类，finetune 必备，`finetune.py:21`）
+  - pefile（PE 结构读取）、matplotlib / seaborn（可视化）、tqdm（进度条）
 
-该系统使用多种技术组合来实现高精度的恶意软件检测和分类，包括：
-- 基于字节序列的统计特征提取
-- PE文件结构分析
-- LightGBM机器学习模型
-- HDBSCAN聚类算法进行恶意软件家族发现
+- 模块架构
 
-## 目录结构
-
-```
-KoloVirusDetector_ML_V2-main/
-├── config/                    # 配置模块，集中默认值与帮助文本
-├── data/                      # 数据相关模块与处理输出
-│   └── dataset.py            # 数据集装载与规范化
-├── features/                  # 通用特征模块
-│   └── statistics.py         # 统计特征提取
-├── training/                  # 训练与评估流水线
-│   ├── data_loader.py
-│   ├── train_lightgbm.py
-│   ├── evaluate.py
-│   ├── feature_io.py
-│   ├── incremental.py
-│   └── model_io.py
-├── models/                    # 家族分类器等模型
-│   └── family_classifier.py
-├── utils/                     # 工具模块
-│   └── logging_utils.py
-├── saved_models/              # 模型保存目录
-├── hdbscan_cluster_results/   # 聚类结果与分类器
-├── reports/                   # 评估与聚类可视化输出
-├── feature_extractor_enhanced.py
-├── main.py                    # 项目入口
-├── pretrain.py                # 预训练入口（调用 training/*）
-├── finetune.py                # 聚类与家族训练入口
-├── scanner.py                 # 扫描器
-├── scanner_service.py         # FastAPI 服务
-└── extracted_features.pkl     # 特征文件（可选）
+```mermaid
+flowchart LR
+  A[原始样本 benign/malicious] --> B[特征提取 features/*]
+  B --> C[处理数据 data/processed_lightgbm + metadata.json]
+  C --> D[预训练 pretrain.py → LightGBM]
+  D --> E[评估 reports/model_evaluation.png]
+  D --> F[特征文件 extracted_features.pkl]
+  F --> G[家族聚类 finetune.py (fast_hdbscan)]
+  G --> H[family_classifier.pkl]
+  H --> I[命令行扫描 scanner.py]
+  I --> J[HTTP 服务 scanner_service.py]
 ```
 
-## 功能模块
+## 环境要求
 
-- `features/statistics.py`：统计特征提取
-- `data/dataset.py`：数据集加载与规范化
-- `training/*`：数据装载、训练、评估、特征IO、增量训练、模型读写
-- `models/family_classifier.py`：家族分类器
-- `scanner.py`：文件与目录扫描
-- `scanner_service.py`：FastAPI 扫描服务
-- `config/config.py`：集中配置与默认值
+- 操作系统：Windows 10/11 或 Linux（x86_64）
+- Python：建议 3.10 及以上
+- 必备软件：`pip`、可选 `virtualenv`/`venv`
+- 依赖：参见 `requirements.txt`
+  - 需确保安装 `fast-hdbscan`，否则家族聚类流程会退出（`finetune.py:21`）
 
-## 安装依赖
+## 安装指南
 
-```bash
-pip install -r requirements.txt
-```
+- 创建并激活虚拟环境（Windows PowerShell）
+  ```powershell
+  python -m venv .venv
+  .\.venv\Scripts\Activate.ps1
+  ```
+- 安装依赖
+  ```bash
+  pip install -r requirements.txt
+  ```
+- 可选：设置环境变量（仅当前会话）
+  ```powershell
+  $env:SCANNER_ALLOWED_SCAN_ROOT="E:\\SampleRoot"
+  $env:SCANNER_SERVICE_PORT="8000"
+  $env:SCANNER_MAX_FILE_SIZE="65536"
+  ```
+- 目录准备
+  - 良性样本：`benign_samples/`
+  - 恶意样本：`malicious_samples/`
+  - 处理输出：`data/processed_lightgbm/`
+  - 模型：`saved_models/lightgbm_model.txt`
+  - 家族分类器：`hdbscan_cluster_results/family_classifier.pkl`
 
-## 使用方法
+## 使用说明
 
-### 1. 提取数据集&预训练二分类模型
-```bat
-python main.py extract&python main.py pretrain --max-finetune-iterations 3
-```
+- 提取原始样本并生成处理数据
+  ```bash
+  python main.py extract --output-dir data/processed_lightgbm --label-inference directory
+  ```
 
-### 2. 家族聚类与分类器训练
-```bat
-python main.py finetune --plot-pca
-```
+- 预训练二分类模型（可保存/复用特征）
+  ```bash
+  python main.py pretrain --save-features
+  ```
 
-### 3. 扫描文件或目录
-```bat
-python main.py scan --file-path e:\path\to\sample.exe
-python main.py scan --dir-path e:\path\to\dump_dir --recursive
-```
+- 家族聚类与分类器训练（生成 `family_classifier.pkl` 与可视化图）
+  ```bash
+  python main.py finetune --plot-pca --min-cluster-size 30 --min-family-size 10
+  ```
 
-### 4. 启动扫描服务
-```bat
-python main.py serve --port 8000
-```
+- 扫描文件或目录并导出结果
+  ```bash
+  python main.py scan --file-path E:\\path\\to\\sample.exe
+  python main.py scan --dir-path E:\\path\\to\\dump_dir --recursive
+  ```
 
-默认路径与参数集中在 `config/config.py`，也可通过环境变量或命令行覆盖。
+- 启动扫描服务（FastAPI）
+  ```bash
+  python main.py serve --port 8000
+  ```
 
-常用端点：
-- `POST /scan/file`：接受 JSON `{ "file_path": "C:\\sample.exe" }`
-- `POST /scan/upload`：上传文件内容（multipart/form-data）进行扫描
-- `GET /health`：服务健康检查
+- HTTP 接口
+  - `POST /scan/file`：`{"file_path": "C:\\sample.exe"}`
+  - `POST /scan/upload`：上传文件进行扫描（multipart/form-data）
+  - `GET /health`：服务健康检查
+  - 示例
+    ```bash
+    curl -X POST "http://127.0.0.1:8000/scan/file" -H "Content-Type: application/json" -d '{"file_path":"C:\\Windows\\System32\\notepad.exe"}'
+    ```
 
-例子：
-`curl -X POST "http://127.0.0.1:8000/scan/file" -H "Content-Type: application/json" -d "{\"file_path\": \"/path/to/your/file.exe\"}"`
+- 常用参数（CLI，对应 `main.py:28-74`）
+  - `--max-file-size`：最大读取字节数（`config/config.py:27-31`）
+  - `--file-extensions`、`--label-inference`（`main.py:34-37,66-71`）
+  - `--num-boost-round`、`--incremental-rounds`、`--incremental-early-stopping`（`main.py:38-41`）
+  - `--min-cluster-size`、`--min-samples`、`--min-family-size`（`main.py:49-51`）
 
-通过以下环境变量可以覆盖默认配置：
+- 环境变量覆盖（服务与扫描）
+  - `SCANNER_LIGHTGBM_MODEL_PATH`、`SCANNER_FAMILY_CLASSIFIER_PATH`（`config/config.py:142-151`）
+  - `SCANNER_CACHE_PATH`、`SCANNER_MAX_FILE_SIZE`、`SCANNER_SERVICE_PORT`、`SCANNER_ALLOWED_SCAN_ROOT`（`config/config.py:146-153`）
 
-| 变量名 | 作用 |
-| --- | --- |
-| `SCANNER_LIGHTGBM_MODEL_PATH` | LightGBM 模型文件路径 |
-| `SCANNER_FAMILY_CLASSIFIER_PATH` | 家族分类器模型路径 |
-| `SCANNER_CACHE_PATH` | 扫描缓存文件路径 |
-| `SCANNER_MAX_FILE_SIZE` | 最大读取文件大小（字节） |
-| `SCANNER_SERVICE_PORT` | 扫描服务端口 |
-| `SCANNER_ALLOWED_SCAN_ROOT` | 限制允许扫描的根目录（路径前缀约束） |
+## 开发指南
 
-## 模型性能
+- 代码结构与职责
+  - `main.py`：统一 CLI 入口与子命令调度（`main.py:23-74`）
+  - 特征提取：`features/extractor_in_memory.py`、`features/statistics.py`（`statistics.py:4`）
+  - 数据集加载：`data/dataset.py`（`data/dataset.py:4-49`）
+  - 训练与评估：`training/train_lightgbm.py`（`training/train_lightgbm.py:15`）、`training/evaluate.py`（`training/evaluate.py:8`）
+  - 增量训练：`training/incremental.py`（`training/incremental.py:6`）
+  - 家族分类器：`models/family_classifier.py`（`models/family_classifier.py:7-69`）
+  - 扫描器与服务：`scanner.py`（`scanner.py:47-78,184-253`）、`scanner_service.py`（`scanner_service.py:97-134`）
+  - 配置集中：`config/config.py`（所有自定义参数与帮助文本）
 
-评估图保存在 `reports/model_evaluation.png`，包括：
-- 准确率指标
-- 混淆矩阵
-- 预测概率分布图
+- 贡献规范
+  - 新增库前先评估必要性与维护成本；如确需引入，请在 `requirements.txt` 与本 README 同步说明
+  - 所有可调参数统一写入 `config/config.py`，避免散落各处
+  - 保持模块化与现有代码风格；提交前请自测与同步文档
 
-## 数据集
+- 测试方法（unittest）
+  - 测试代码放置于 `tests/`，文件名以 `test_*.py` 命名
+  - 运行：
+    ```bash
+    python -m unittest discover -s tests -p "test_*.py"
+    ```
+  - 建议覆盖：
+    - 特征提取边界（空文件、非 PE、超长截断）
+    - 检测阈值与误报处理（`config.PREDICTION_THRESHOLD`、增量训练权重）
+    - 服务端路径校验与上传扫描（`scanner_service.py:97-134`）
 
-项目使用以下数据集进行训练和测试：
-- 正常软件样本：`benign_samples/` 目录
-- 恶意软件样本：`malicious_samples/` 目录
+## 部署说明
 
-处理后的数据存储在 `data/processed_lightgbm/` 目录中。
+- 准备工件
+  - `saved_models/lightgbm_model.txt` 或同名 `lightgbm_model.txt.gz`
+  - `hdbscan_cluster_results/family_classifier.pkl`
 
-## 聚类结果
+- 环境变量与安全
+  - 设置 `SCANNER_ALLOWED_SCAN_ROOT` 限制可扫描目录，避免越权访问（`scanner.py:29-38`）
+  - 根据需要调整 `SCANNER_MAX_FILE_SIZE` 以平衡性能与准确性
 
-聚类结果保存在 `hdbscan_cluster_results/`，可视化图表保存在 `reports/`：
-- 聚类标签与统计
-- `reports/hdbscan_clustering_visualization.png`
-- `reports/hdbscan_clustering_visualization_pca.png`
-- 家族名称映射与分类器
+- 启动服务
+  ```bash
+  python main.py serve --port 8000
+  ```
+  - 服务内部优先使用 `.gz` 压缩模型（若存在）（`scanner_service.py:49-56`）
 
-## 项目特点
+- 性能优化建议
+  - 训练阶段：调整 `LIGHTGBM_NUM_THREADS_MAX`、`num_leaves`、`learning_rate`（`training/train_lightgbm.py:32-47`）
+  - 推理阶段：合理设置 `DEFAULT_MAX_FILE_SIZE`，使用缓存文件 `scan_cache.json`
+  - 可视化与聚类：降维到 `PCA_DIMENSION_FOR_CLUSTERING`，控制采样量 `VIS_SAMPLE_SIZE`
 
-1. **高准确性**：结合多种特征和先进的机器学习算法
-2. **高效性**：优化的特征提取和预测过程
-3. **可扩展性**：模块化设计，易于添加新功能
-4. **可视化**：提供丰富的结果可视化功能
+## 维护信息
 
-## 贡献
+- 已知问题与解决方案
+  - 未安装 `fast-hdbscan` 时，家族聚类直接退出（请安装依赖）`finetune.py:19-23`
+  - 模型/分类器路径不存在导致启动失败（请检查路径）`scanner_service.py:59-65`
+  - 非 PE 文件会被跳过（属预期行为）`scanner.py:211-213`
+  - 特征维度不一致会自动填充/截断并记录汇总（数据/增量/扫描路径均有统计文件输出）`training/data_loader.py:61-73,99-113`
 
-欢迎提交Issue和Pull Request来改进项目。
+- 故障排查指南
+  - 确认依赖与 Python 版本；运行 `pip list` 检查 `fast-hdbscan`、`lightgbm`
+  - 检查模型与分类器文件是否存在于预期路径
+  - 使用 `--max-file-size` 与 `SCANNER_ALLOWED_SCAN_ROOT` 缩小问题范围
+  - 查看 `reports/`、`scan_results/` 与日志输出定位问题
+
+- 联系方式
+  - 通过仓库 Issue 反馈问题与建议
 
 ## 许可证
 
-本项目采用Apache-2.0许可证，详情请见LICENSE文件。
-
-
-
-
-
-# Shenshu - Axon V2
-
-A machine learning-based malware detection and classification system that leverages LightGBM and deep learning techniques to detect malware and classify it into families.
-
-## Project Overview
-
-**Shenshu - Axon V2** is a machine learning-powered malware detection system capable of:
-
-1. Detecting whether a file is malicious (binary classification)  
-2. Classifying malware into specific families (multi-class classification)
-
-The system combines multiple advanced techniques to achieve high-precision malware detection and classification, including:
-- Statistical feature extraction from byte sequences
-- PE file structure analysis
-- LightGBM machine learning models
-- HDBSCAN clustering algorithm for malware family discovery
-
-## Directory Structure
-
-```
-KoloVirusDetectorML/
-├── benign_samples/           # Benign software samples
-├── malicious_samples/        # Malware samples
-├── data/                     # Processed datasets
-├── saved_models/             # Saved model files
-├── hdbscan_cluster_results/  # HDBSCAN clustering results
-├── feature_extractor_enhanced.py  # Feature extraction module
-├── pretrain.py               # Pre-training module
-├── finetune.py               # Fine-tuning module
-├── scanner.py                # Scanner module
-├── extracted_features.pkl    # Extracted features file
-└── model_evaluation.png      # Model evaluation result chart
-```
-
-## Functional Modules
-
-### 1. Feature Extraction (feature_extractor_enhanced.py)
-
-This module extracts features from executable files, including:
-- Statistical features from byte sequences
-- File entropy calculation
-- PE file structural information
-- File attribute metadata
-
-### 2. Pre-training (pretrain.py)
-
-Implements binary malware detection:
-- Trains a binary classification model using LightGBM
-- Distinguishes between benign and malicious software
-- Provides model evaluation and validation capabilities
-
-### 3. Fine-tuning (finetune.py)
-
-Implements malware family classification:
-- Uses the HDBSCAN clustering algorithm to discover malware families
-- Performs fine-grained classification of malware samples
-- Visualizes clustering results
-
-### 4. Scanner (scanner.py)
-
-Provides a command-line interface for scanning files:
-- Single file scanning
-- Batch scanning of directories
-- Outputs detailed scan reports
-
-## Installation Dependencies
-
-```bash
-pip install numpy pandas scikit-learn lightgbm matplotlib seaborn tqdm pefile torch fast-hdbscan
-```
-
-## Usage Instructions
-
-### 1. Train the Binary Classification Model
-
-```bash
-python pretrain.py --data_dir data/processed_lightgbm --metadata_file data/metadata.json
-```
-
-### 2. Perform Malware Family Clustering
-
-```bash
-python finetune.py --features_file extracted_features.pkl --output_dir hdbscan_cluster_results
-```
-
-### 3. Scan Files
-
-```bash
-# Scan a single file
-python scanner.py --model saved_models/lightgbm_model.txt --file /path/to/file.exe
-
-# Scan an entire directory
-python scanner.py --model saved_models/lightgbm_model.txt --dir /path/to/directory
-```
-
-## Model Performance
-
-Refer to `model_evaluation.png` for model evaluation results, which include:
-- Accuracy metrics
-- Confusion matrix
-- ROC curve
-
-## Dataset
-
-The project uses the following datasets for training and testing:
-- Benign software samples: located in `benign_samples/`
-- Malware samples: located in `malicious_samples/`
-
-Processed data is stored in the `data/processed_lightgbm/` directory.
-
-## Clustering Results
-
-HDBSCAN clustering results are saved in the `hdbscan_cluster_results/` directory, including:
-- Cluster label files
-- Clustering visualization charts
-- Malware family name mappings
-
-## Key Features
-
-1. **High Accuracy**: Combines multiple features and advanced machine learning algorithms  
-2. **Efficiency**: Optimized feature extraction and prediction pipeline  
-3. **Scalability**: Modular design that supports easy extension and integration of new features  
-4. **Visualization**: Rich visualization tools for analysis and reporting
-
-## Contributions
-
-We welcome contributions via Issues and Pull Requests to improve the project.
-
-## License
-
-This project is licensed under the Apache-2.0 License. See the LICENSE file for details.
+本项目采用 Apache-2.0 许可证，详见 `LICENSE`。
