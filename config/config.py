@@ -210,3 +210,11 @@ API_CATEGORY_NETWORK = ['ws2_32','wininet','winhttp','internet','socket','connec
 API_CATEGORY_PROCESS = ['createprocess','openprocess','terminateprocess','getprocaddress','loadlibrary','virtualallocex','writeprocessmemory']
 API_CATEGORY_FILESYSTEM = ['createfile','readfile','writefile','deletefile','movefile','copyfile','findfirstfile','findnextfile','setfileattributes','getfileattributes','getfilesize']
 API_CATEGORY_REGISTRY = ['regopenkey','regsetvalue','regcreatekey','regdeletekey','regqueryvalue','regenumkey','regclosekey']
+
+GATING_ENABLED = False
+GATING_MODE = 'rule'
+GATE_HIGH_ENTROPY_RATIO = 0.6
+GATE_PACKED_SECTIONS_RATIO = 0.3
+GATE_PACKER_RATIO = 0.05
+EXPERT_NORMAL_MODEL_PATH = os.path.join(SAVED_MODEL_DIR, 'lightgbm_model_normal.txt')
+EXPERT_PACKED_MODEL_PATH = os.path.join(SAVED_MODEL_DIR, 'lightgbm_model_packed.txt')

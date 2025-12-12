@@ -152,7 +152,6 @@ flowchart LR
   ```bash
   python main.py serve --port 8000
   ```
-  - 服务内部优先使用 `.gz` 压缩模型（若存在）（`scanner_service.py:49-56`）
 
 - 性能优化建议
   - 训练阶段：调整 `LIGHTGBM_NUM_THREADS_MAX`、`num_leaves`、`learning_rate`（`training/train_lightgbm.py:32-47`）
