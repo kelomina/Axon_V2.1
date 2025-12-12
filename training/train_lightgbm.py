@@ -1,7 +1,7 @@
 import numpy as np
 import lightgbm as lgb
 import multiprocessing
-from config.config import WARMUP_ROUNDS, WARMUP_START_LR, LIGHTGBM_FEATURE_FRACTION, LIGHTGBM_BAGGING_FRACTION, LIGHTGBM_BAGGING_FREQ, LIGHTGBM_MIN_GAIN_TO_SPLIT, LIGHTGBM_MIN_DATA_IN_LEAF, LIGHTGBM_NUM_THREADS_MAX, FP_WEIGHT_BASE, FP_WEIGHT_GROWTH_PER_ITER, FP_WEIGHT_MAX
+from config.config import WARMUP_ROUNDS, WARMUP_START_LR, LIGHTGBM_FEATURE_FRACTION, LIGHTGBM_BAGGING_FRACTION, LIGHTGBM_BAGGING_FREQ, LIGHTGBM_MIN_GAIN_TO_SPLIT, LIGHTGBM_MIN_DATA_IN_LEAF, LIGHTGBM_NUM_THREADS_MAX, FP_WEIGHT_BASE, FP_WEIGHT_GROWTH_PER_ITER, FP_WEIGHT_MAX, DEFAULT_EARLY_STOPPING_ROUNDS
 
 def warmup_scheduler(warmup_rounds=WARMUP_ROUNDS, start_lr=WARMUP_START_LR, target_lr=0.05):
     def callback(env):
@@ -46,7 +46,7 @@ def train_lightgbm_model(X_train, y_train, X_val, y_val, false_positive_files=No
         'num_threads': min(multiprocessing.cpu_count(), LIGHTGBM_NUM_THREADS_MAX)
     }
     print(f"[*] Current training parameters - Learning rate: {learning_rate:.4f}, Number of leaves: {num_leaves}")
-    callbacks = [lgb.early_stopping(50), lgb.log_evaluation(50)]
+    callbacks = [lgb.early_stopping(DEFAULT_EARLY_STOPPING_ROUNDS), lgb.log_evaluation(50)]
     if iteration == 1 and init_model is None:
         print("[*] Applying Cold Start mechanism (Warm-up)...")
         callbacks.append(warmup_scheduler(warmup_rounds=WARMUP_ROUNDS, start_lr=WARMUP_START_LR, target_lr=learning_rate))

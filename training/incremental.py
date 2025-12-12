@@ -1,9 +1,9 @@
 import numpy as np
 import lightgbm as lgb
 import multiprocessing
-from config.config import LIGHTGBM_FEATURE_FRACTION, LIGHTGBM_BAGGING_FRACTION, LIGHTGBM_BAGGING_FREQ, LIGHTGBM_MIN_GAIN_TO_SPLIT, LIGHTGBM_MIN_DATA_IN_LEAF, LIGHTGBM_NUM_THREADS_MAX, DEFAULT_LIGHTGBM_NUM_LEAVES, DEFAULT_LIGHTGBM_LEARNING_RATE
+from config.config import LIGHTGBM_FEATURE_FRACTION, LIGHTGBM_BAGGING_FRACTION, LIGHTGBM_BAGGING_FREQ, LIGHTGBM_MIN_GAIN_TO_SPLIT, LIGHTGBM_MIN_DATA_IN_LEAF, LIGHTGBM_NUM_THREADS_MAX, DEFAULT_LIGHTGBM_NUM_LEAVES, DEFAULT_LIGHTGBM_LEARNING_RATE, DEFAULT_INCREMENTAL_EARLY_STOPPING
 
-def incremental_train_lightgbm_model(existing_model, X_train, y_train, X_val, y_val, false_positive_files=None, files_train=None, num_boost_round=100, early_stopping_rounds=50):
+def incremental_train_lightgbm_model(existing_model, X_train, y_train, X_val, y_val, false_positive_files=None, files_train=None, num_boost_round=100, early_stopping_rounds=DEFAULT_INCREMENTAL_EARLY_STOPPING):
     print("[*] Performing incremental reinforcement training...")
     train_data = lgb.Dataset(X_train, label=y_train)
     val_data = lgb.Dataset(X_val, label=y_val, reference=train_data)

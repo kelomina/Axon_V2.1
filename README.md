@@ -96,9 +96,80 @@ flowchart LR
   - `POST /scan/upload`：上传文件进行扫描（multipart/form-data）
   - `GET /health`：服务健康检查
   - 示例
-    ```bash
-    curl -X POST "http://127.0.0.1:8000/scan/file" -H "Content-Type: application/json" -d '{"file_path":"C:\\Windows\\System32\\notepad.exe"}'
-    ```
+  ```bash
+  curl -X POST "http://127.0.0.1:8000/scan/file" -H "Content-Type: application/json" -d '{"file_path":"C:\\Windows\\System32\\notepad.exe"}'
+  ```
+
+### 门控机制验证
+
+- 用途：基于高熵比例、打包器特征等信号，对样本进行路由判定（packed/normal），用于验证门控策略有效性
+- 运行
+  ```bash
+  python -m validation.gating_validator --file-path E:\\path\\to\\sample.exe
+  python -m validation.gating_validator --dir-path E:\\path\\to\\dump_dir --recursive
+  ```
+- 可调参数（`config/config.py`）
+  - `GATE_HIGH_ENTROPY_RATIO`、`GATE_PACKED_SECTIONS_RATIO`、`GATE_PACKER_RATIO`
+  - `GATING_MODE`、`GATING_ENABLED`
+  - 专家模型路径：`EXPERT_NORMAL_MODEL_PATH`、`EXPERT_PACKED_MODEL_PATH`
+
+### 特征门控交叉实验
+
+- 用途：在训练阶段对不重要的特征进行屏蔽，进行对照实验，评估对准确率与误报的影响
+- 运行
+  ```bash
+  python -m validation.feature_gating_experiment --use-existing-features --num-boost-round 1000
+  ```
+- 实验内容
+  - 基线：使用全部特征训练与评估（不使用门控）
+  - Top-K 门控序列：自动从 Top-50 到全特征，每次步进 20，逐一训练与评估
+- 输出
+  - 结果保存 `reports/feature_gating_experiment.json`
+- 可调参数（`config/config.py`）
+  - `FEATURE_GATING_K_START`（默认 50）
+  - `FEATURE_GATING_K_STEP`（默认 20）
+  - `FEATURE_GATING_REPORT_PATH`
+
+### 冷启动交叉实验
+
+- 用途：比较使用学习率冷启动（warmup）与不使用冷启动的模型性能
+- 运行
+  ```bash
+  python -m validation.warmup_experiment --use-existing-features --num-boost-round 1000
+  ```
+- 输出
+  - 结果保存 `reports/warmup_experiment.json`
+
+### 学习率交叉实验
+
+- 用途：分别在不使用冷启动与使用冷启动两条路径，对多组学习率进行对照测试，比较模型性能
+- 运行
+  ```bash
+  python -m validation.learning_rate_sweep --use-existing-features --num-boost-round 1000
+  ```
+- 输出
+  - 结果保存 `reports/learning_rate_sweep.json`
+- 可调参数（`config/config.py`）
+  - `LEARNING_RATE_SWEEP_NO_WARMUP` 不使用冷启动的学习率列表
+  - `LEARNING_RATE_SWEEP_WARMUP_TARGETS` 使用冷启动的目标学习率列表
+
+### 模型复杂度×学习率交叉实验
+
+- 用途：在不同模型复杂度（`num_leaves`）下，对多组学习率分别进行对照测试，包含不使用冷启动与使用冷启动两条路径
+- 运行
+  ```bash
+  python -m validation.model_complexity_lr_grid --use-existing-features --num-boost-round 1000
+  ```
+- 输出
+  - 结果保存 `reports/model_complexity_lr_grid.json`
+- 可调参数（`config/config.py`）
+  - `COMPLEXITY_SWEEP_NUM_LEAVES` 复杂度列表（默认 `[31,36,64,96,128]`）
+  - `LEARNING_RATE_SWEEP_NO_WARMUP`、`LEARNING_RATE_SWEEP_WARMUP_TARGETS`
+
+- 可选参数（CLI 覆盖默认列表）
+  - `--leaves` 指定叶子数列表，如 `--leaves 31,64,96`
+  - `--lr-no` 指定不使用冷启动的学习率列表，如 `--lr-no 0.03,0.05`
+  - `--lr-warm` 指定使用冷启动的目标学习率列表，如 `--lr-warm 0.03,0.05`
 
 - 常用参数（CLI，对应 `main.py:28-74`）
   - `--max-file-size`：最大读取字节数（`config/config.py:27-31`）
@@ -154,7 +225,7 @@ flowchart LR
   ```
 
 - 性能优化建议
-  - 训练阶段：调整 `LIGHTGBM_NUM_THREADS_MAX`、`num_leaves`、`learning_rate`（`training/train_lightgbm.py:32-47`）
+  - 训练阶段：调整 `LIGHTGBM_NUM_THREADS_MAX`、`num_leaves`、`learning_rate`、`DEFAULT_EARLY_STOPPING_ROUNDS`（默认 200）（`training/train_lightgbm.py:32-49`）
   - 推理阶段：合理设置 `DEFAULT_MAX_FILE_SIZE`，使用缓存文件 `scan_cache.json`
   - 可视化与聚类：降维到 `PCA_DIMENSION_FOR_CLUSTERING`，控制采样量 `VIS_SAMPLE_SIZE`
 
