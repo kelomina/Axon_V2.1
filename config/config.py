@@ -67,9 +67,9 @@ LIGHTGBM_MIN_GAIN_TO_SPLIT = 0.01
 LIGHTGBM_MIN_DATA_IN_LEAF = 30
 # LIGHTGBM_NUM_THREADS_MAX：最大线程数；用途：并行训练；推荐值：8（按 CPU 调整）
 LIGHTGBM_NUM_THREADS_MAX = 16
-# DEFAULT_LIGHTGBM_NUM_LEAVES/LEARNING_RATE：默认叶子数与学习率；用途：基础复杂度与步长；推荐值：31/0.05
-DEFAULT_LIGHTGBM_NUM_LEAVES = 31
-DEFAULT_LIGHTGBM_LEARNING_RATE = 0.05
+# DEFAULT_LIGHTGBM_NUM_LEAVES/LEARNING_RATE：默认叶子数与学习率；用途：基础复杂度与步长；推荐值：30/0.07
+DEFAULT_LIGHTGBM_NUM_LEAVES = 30
+DEFAULT_LIGHTGBM_LEARNING_RATE = 0.07
 
 
 # 帮助文本（训练 CLI）：用途：命令行参数说明文字；推荐值：按需维护
@@ -203,28 +203,34 @@ FAMILY_THRESHOLD_MULTIPLIER = 1.0
 WARMUP_ROUNDS = 200
 # WARMUP_START_LR：暖启动起始学习率；用途：初始学习率；推荐值：0.001（0.0005-0.005）
 WARMUP_START_LR = 0.001
-# WARMUP_TARGET_LR：暖启动目标学习率；用途：结束时学习率；推荐值：0.05（0.01-0.10）
-WARMUP_TARGET_LR = 0.1
+# WARMUP_TARGET_LR：暖启动目标学习率；用途：结束时学习率
+WARMUP_TARGET_LR = 0.07
 
 API_CATEGORY_NETWORK = ['ws2_32','wininet','winhttp','internet','socket','connect','send','recv','http','url']
 API_CATEGORY_PROCESS = ['createprocess','openprocess','terminateprocess','getprocaddress','loadlibrary','virtualallocex','writeprocessmemory']
 API_CATEGORY_FILESYSTEM = ['createfile','readfile','writefile','deletefile','movefile','copyfile','findfirstfile','findnextfile','setfileattributes','getfileattributes','getfilesize']
 API_CATEGORY_REGISTRY = ['regopenkey','regsetvalue','regcreatekey','regdeletekey','regqueryvalue','regenumkey','regclosekey']
 
-GATING_ENABLED = False
-GATING_MODE = 'rule'
-GATE_HIGH_ENTROPY_RATIO = 0.6
-GATE_PACKED_SECTIONS_RATIO = 0.3
-GATE_PACKER_RATIO = 0.05
+# 路由门控与专家模型配置
+GATING_ENABLED = True
+GATING_MODE = 'mlp'  # 'mlp' or 'transformer'
+GATING_MODEL_PATH = os.path.join(SAVED_MODEL_DIR, 'gating_model.pth')
+# GATING_INPUT_DIM corresponds to the total feature dimension (Statistical + PE features)
+# Statistical features: 49 (based on current logic with STAT_CHUNK_COUNT=10)
+# PE features: 1500 (PE_FEATURE_VECTOR_DIM)
+# Total: 1549
+GATING_INPUT_DIM = 1549 
+GATING_HIDDEN_DIM = 256
+GATING_OUTPUT_DIM = 2  # 0: Normal, 1: Packed
+GATING_THRESHOLD = 0.5
+GATING_LEARNING_RATE = 0.001
+GATING_EPOCHS = 20
+GATING_BATCH_SIZE = 64
+
 EXPERT_NORMAL_MODEL_PATH = os.path.join(SAVED_MODEL_DIR, 'lightgbm_model_normal.txt')
 EXPERT_PACKED_MODEL_PATH = os.path.join(SAVED_MODEL_DIR, 'lightgbm_model_packed.txt')
 
-FEATURE_GATING_TOP_K = 200
+FEATURE_GATING_TOP_K = 1150
 FEATURE_GATING_REPORT_PATH = os.path.join(MODEL_EVAL_FIG_DIR, 'feature_gating_experiment.json')
 FEATURE_GATING_K_START = 50
-FEATURE_GATING_K_STEP = 20
-LEARNING_RATE_SWEEP_NO_WARMUP = [0.01, 0.02, 0.03, 0.05, 0.08, 0.1]
-LEARNING_RATE_SWEEP_WARMUP_TARGETS = [0.01, 0.02, 0.03, 0.05, 0.08, 0.1]
-LEARNING_RATE_SWEEP_REPORT_PATH = os.path.join(MODEL_EVAL_FIG_DIR, 'learning_rate_sweep.json')
-COMPLEXITY_SWEEP_NUM_LEAVES = [31, 36, 64, 96, 128]
-COMPLEXITY_SWEEP_REPORT_PATH = os.path.join(MODEL_EVAL_FIG_DIR, 'model_complexity_lr_grid.json')
+FEATURE_GATING_K_STEP = 50

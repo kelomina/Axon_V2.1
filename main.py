@@ -72,6 +72,8 @@ def main():
     sp_serve = subs.add_parser('serve', help='启动FastAPI扫描服务')
     sp_serve.add_argument('--port', type=int, default=DEFAULT_SERVE_PORT, help=HELP_PORT)
 
+    sp_train_routing = subs.add_parser('train-routing', help='训练路由门控与专家模型系统')
+
     args = parser.parse_args()
 
     if args.command == 'pretrain':
@@ -141,6 +143,13 @@ def main():
             uvicorn.run(scanner_service.app, host='0.0.0.0', port=args.port, reload=False)
         except Exception as e:
             logger.error(f'服务启动失败: {e}')
+            raise
+    elif args.command == 'train-routing':
+        from training import train_routing
+        try:
+            train_routing.main()
+        except Exception as e:
+            logger.error(f'路由系统训练失败: {e}')
             raise
 
 if __name__ == '__main__':

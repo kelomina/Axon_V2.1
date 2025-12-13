@@ -10,8 +10,15 @@
   - 本地扫描与目录批量扫描，支持缓存与结果导出（JSON/CSV）
   - 提供 HTTP 接口的扫描服务，便于系统集成
 
+- 新增特性：路由门控与专家模型系统
+  - 引入动态路由机制（Gating Model），基于样本特征（如加壳情况）自动将请求分发至最适合的专家模型。
+  - 包含两个专家模型：
+    - Normal Expert：专注于处理未加壳的常规恶意样本。
+    - Packed Expert：专注于处理加壳或高熵的恶意样本。
+  - 提升了对加壳样本的检测能力，同时保持对常规样本的高精度。
+
 - 技术栈与核心依赖
-  - Python、NumPy、Pandas、scikit-learn、LightGBM
+  - Python、NumPy、Pandas、scikit-learn、LightGBM、PyTorch (新增)
   - FastAPI + Uvicorn（服务端）
   - fast-hdbscan（多核优化的 HDBSCAN 实现，用于家族聚类，finetune 必备，`finetune.py:21`）
   - pefile（PE 结构读取）、matplotlib / seaborn（可视化）、tqdm（进度条）
@@ -100,6 +107,24 @@ flowchart LR
   curl -X POST "http://127.0.0.1:8000/scan/file" -H "Content-Type: application/json" -d '{"file_path":"C:\\Windows\\System32\\notepad.exe"}'
   ```
 
+## 路由门控系统训练
+
+新的路由门控系统需要单独的训练流程来生成 Gating Model 和两个 Expert Models。
+
+- 运行路由系统训练脚本：
+  ```bash
+  python -m training.train_routing
+  ```
+  该脚本会自动：
+  1. 加载或提取特征。
+  2. 根据启发式规则（加壳特征）生成路由标签。
+  3. 训练 Gating Model（PyTorch MLP/Transformer）。
+  4. 分割数据集并分别训练 Normal Expert 和 Packed Expert (LightGBM)。
+  5. 保存所有模型至 `saved_models/` 目录。
+
+- 配置：
+  可以在 `config/config.py` 中调整 `GATING_*` 相关参数，如网络结构、阈值等。
+
 ### 门控机制验证
 
 - 用途：基于高熵比例、打包器特征等信号，对样本进行路由判定（packed/normal），用于验证门控策略有效性
@@ -130,46 +155,13 @@ flowchart LR
   - `FEATURE_GATING_K_STEP`（默认 20）
   - `FEATURE_GATING_REPORT_PATH`
 
-### 冷启动交叉实验
+### 学习率暖启动
 
-- 用途：比较使用学习率冷启动（warmup）与不使用冷启动的模型性能
-- 运行
-  ```bash
-  python -m validation.warmup_experiment --use-existing-features --num-boost-round 1000
-  ```
-- 输出
-  - 结果保存 `reports/warmup_experiment.json`
-
-### 学习率交叉实验
-
-- 用途：分别在不使用冷启动与使用冷启动两条路径，对多组学习率进行对照测试，比较模型性能
-- 运行
-  ```bash
-  python -m validation.learning_rate_sweep --use-existing-features --num-boost-round 1000
-  ```
-- 输出
-  - 结果保存 `reports/learning_rate_sweep.json`
-- 可调参数（`config/config.py`）
-  - `LEARNING_RATE_SWEEP_NO_WARMUP` 不使用冷启动的学习率列表
-  - `LEARNING_RATE_SWEEP_WARMUP_TARGETS` 使用冷启动的目标学习率列表
-
-### 模型复杂度×学习率交叉实验
-
-- 用途：在不同模型复杂度（`num_leaves`）下，对多组学习率分别进行对照测试，包含不使用冷启动与使用冷启动两条路径
-- 运行
-  ```bash
-  python -m validation.model_complexity_lr_grid --use-existing-features --num-boost-round 1000
-  ```
-- 输出
-  - 结果保存 `reports/model_complexity_lr_grid.json`
-- 可调参数（`config/config.py`）
-  - `COMPLEXITY_SWEEP_NUM_LEAVES` 复杂度列表（默认 `[31,36,64,96,128]`）
-  - `LEARNING_RATE_SWEEP_NO_WARMUP`、`LEARNING_RATE_SWEEP_WARMUP_TARGETS`
-
-- 可选参数（CLI 覆盖默认列表）
-  - `--leaves` 指定叶子数列表，如 `--leaves 31,64,96`
-  - `--lr-no` 指定不使用冷启动的学习率列表，如 `--lr-no 0.03,0.05`
-  - `--lr-warm` 指定使用冷启动的目标学习率列表，如 `--lr-warm 0.03,0.05`
+- 默认启用学习率暖启动策略
+- 参数（`config/config.py`）
+  - `WARMUP_ROUNDS`（默认 200）
+  - `WARMUP_START_LR`（默认 0.001）
+  - `WARMUP_TARGET_LR`（默认 0.07）
 
 - 常用参数（CLI，对应 `main.py:28-74`）
   - `--max-file-size`：最大读取字节数（`config/config.py:27-31`）
@@ -225,7 +217,7 @@ flowchart LR
   ```
 
 - 性能优化建议
-  - 训练阶段：调整 `LIGHTGBM_NUM_THREADS_MAX`、`num_leaves`、`learning_rate`、`DEFAULT_EARLY_STOPPING_ROUNDS`（默认 200）（`training/train_lightgbm.py:32-49`）
+- 训练阶段：调整 `LIGHTGBM_NUM_THREADS_MAX`、`num_leaves`、`learning_rate`、`DEFAULT_EARLY_STOPPING_ROUNDS`（默认 200）。当前默认：`num_leaves=30`、`learning_rate=0.07`（`config/config.py`，`training/train_lightgbm.py`）
   - 推理阶段：合理设置 `DEFAULT_MAX_FILE_SIZE`，使用缓存文件 `scan_cache.json`
   - 可视化与聚类：降维到 `PCA_DIMENSION_FOR_CLUSTERING`，控制采样量 `VIS_SAMPLE_SIZE`
 

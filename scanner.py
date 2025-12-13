@@ -12,8 +12,16 @@ import shutil
 import argparse
 from models.family_classifier import FamilyClassifier
 from features.extractor_in_memory import extract_features_in_memory
-from config.config import MODEL_PATH, FAMILY_CLASSIFIER_PATH, DEFAULT_MAX_FILE_SIZE, SCAN_CACHE_PATH, SCAN_OUTPUT_DIR, HELP_LIGHTGBM_MODEL_PATH, HELP_FAMILY_CLASSIFIER_PATH, HELP_CACHE_FILE, HELP_FILE_PATH, HELP_DIR_PATH, HELP_RECURSIVE, HELP_OUTPUT_PATH, HELP_MAX_FILE_SIZE, ENV_ALLOWED_SCAN_ROOT, PREDICTION_THRESHOLD
+from config.config import (
+    MODEL_PATH, FAMILY_CLASSIFIER_PATH, DEFAULT_MAX_FILE_SIZE, SCAN_CACHE_PATH, 
+    SCAN_OUTPUT_DIR, HELP_LIGHTGBM_MODEL_PATH, HELP_FAMILY_CLASSIFIER_PATH, 
+    HELP_CACHE_FILE, HELP_FILE_PATH, HELP_DIR_PATH, HELP_RECURSIVE, 
+    HELP_OUTPUT_PATH, HELP_MAX_FILE_SIZE, ENV_ALLOWED_SCAN_ROOT, PREDICTION_THRESHOLD,
+    GATING_ENABLED
+)
 
+if GATING_ENABLED:
+    from models.routing_model import RoutingModel
 
 def validate_path(path):
     if not path:
@@ -51,17 +59,28 @@ class MalwareScanner:
         self.max_file_size = max_file_size
         self.cache_file = cache_file
         self.enable_cache = enable_cache
+        self.binary_classifier = None
+        self.routing_model = None
 
-        print("[*] Loading LightGBM binary classification model...")
-        model_path = lightgbm_model_path
-        if model_path.endswith('.gz'):
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.txt') as tmp:
-                with gzip.open(model_path, 'rb') as gf:
-                    shutil.copyfileobj(gf, tmp)
-                model_path = tmp.name
-        self.binary_classifier = lgb.Booster(model_file=model_path)
-        self._temp_model_path = model_path if model_path != lightgbm_model_path else None
-        print("[+] LightGBM binary classification model loaded")
+        if GATING_ENABLED:
+            print("[*] Gating System Enabled. Loading Routing Model...")
+            try:
+                self.routing_model = RoutingModel()
+                print("[+] Routing Model loaded")
+            except Exception as e:
+                print(f"[!] Failed to load Routing Model: {e}. Falling back to single LightGBM model.")
+
+        if not GATING_ENABLED or self.routing_model is None:
+            print("[*] Loading LightGBM binary classification model...")
+            model_path = lightgbm_model_path
+            if model_path.endswith('.gz'):
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.txt') as tmp:
+                    with gzip.open(model_path, 'rb') as gf:
+                        shutil.copyfileobj(gf, tmp)
+                    model_path = tmp.name
+            self.binary_classifier = lgb.Booster(model_file=model_path)
+            self._temp_model_path = model_path if model_path != lightgbm_model_path else None
+            print("[+] LightGBM binary classification model loaded")
 
         print("[*] Loading family classifier...")
         self.family_classifier = FamilyClassifier()
@@ -171,10 +190,19 @@ class MalwareScanner:
     def _predict_malware_from_features(self, features):
         try:
             feature_vector = features.reshape(1, -1)
-            prediction = self.binary_classifier.predict(feature_vector)
+            
+            if self.routing_model is not None:
+                predictions, decisions = self.routing_model.predict(feature_vector)
+                prediction_val = predictions[0]
+                # Log routing decision if needed (e.g. for debug)
+                # decision = "Packed" if decisions[0] == 1 else "Normal"
+            elif self.binary_classifier is not None:
+                prediction_val = self.binary_classifier.predict(feature_vector)[0]
+            else:
+                raise Exception("No model loaded for prediction")
 
-            is_malware = prediction[0] > PREDICTION_THRESHOLD
-            confidence = prediction[0] if is_malware else (1 - prediction[0])
+            is_malware = prediction_val > PREDICTION_THRESHOLD
+            confidence = prediction_val if is_malware else (1 - prediction_val)
 
             return is_malware, confidence
         except Exception as e:

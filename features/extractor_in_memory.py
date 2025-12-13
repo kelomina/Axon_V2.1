@@ -714,6 +714,28 @@ def extract_lightweight_pe_features(file_path):
     except Exception:
         return feature_vector
 
+PE_FEATURE_ORDER = [
+    'size','log_size','sections_count','symbols_count','imports_count','exports_count',
+    'unique_imports','unique_dlls','unique_apis','section_names_count','section_total_size',
+    'section_total_vsize','avg_section_size','avg_section_vsize','section_entropy_avg','section_entropy_min','section_entropy_max','section_entropy_std','packed_sections_ratio','subsystem','dll_characteristics',
+    'code_section_ratio','data_section_ratio','code_vsize_ratio','data_vsize_ratio',
+    'has_nx_compat','has_aslr','has_seh','has_guard_cf','has_resources','has_debug_info',
+    'has_tls','has_relocs','has_exceptions','dll_name_avg_length','dll_name_max_length',
+    'dll_name_min_length','section_name_avg_length','section_name_max_length','section_name_min_length',
+    'export_name_avg_length','export_name_max_length','export_name_min_length','max_section_size',
+    'min_section_size','long_sections_count','short_sections_count','section_size_std','section_size_cv',
+    'executable_writable_sections','file_entropy_avg','file_entropy_min','file_entropy_max','file_entropy_range',
+    'zero_byte_ratio','printable_byte_ratio','trailing_data_size','trailing_data_ratio','imported_system_dlls_count',
+    'exports_density','has_large_trailing_data','pe_header_size','header_size_ratio','file_entropy_std',
+    'file_entropy_q25','file_entropy_q75','file_entropy_median','high_entropy_ratio','low_entropy_ratio',
+    'entropy_change_rate','entropy_change_std','executable_sections_count','writable_sections_count',
+    'readable_sections_count','executable_sections_ratio','writable_sections_ratio','readable_sections_ratio',
+    'executable_code_density','non_standard_executable_sections_count','rwx_sections_count','rwx_sections_ratio',
+    'special_char_ratio','long_sections_ratio','short_sections_ratio','dll_imports_entropy','api_imports_entropy',
+    'imported_system_dlls_ratio','resources_count','alignment_mismatch_count','alignment_mismatch_ratio','entry_point_ratio',
+    'syscall_api_ratio','import_ordinal_only_count','import_ordinal_only_ratio','avg_imports_per_dll','exports_name_ratio','entry_in_nonstandard_section_flag','tls_callbacks_count','reloc_blocks_count','reloc_entries_count','checksum_zero_flag','api_network_ratio','api_process_ratio','api_filesystem_ratio','api_registry_ratio','overlay_entropy','overlay_high_entropy_flag','packer_keyword_hits_count','packer_keyword_hits_ratio'
+]
+
 def extract_combined_pe_features(file_path):
     lightweight_features = extract_lightweight_pe_features(file_path)
     enhanced_features = extract_enhanced_pe_features(file_path)
@@ -723,27 +745,7 @@ def extract_combined_pe_features(file_path):
     all_features.update(file_attrs)
     combined_vector = np.zeros(PE_FEATURE_VECTOR_DIM, dtype=np.float32)
     combined_vector[:LIGHTWEIGHT_FEATURE_DIM] = lightweight_features * LIGHTWEIGHT_FEATURE_SCALE
-    feature_order = [
-        'size','log_size','sections_count','symbols_count','imports_count','exports_count',
-        'unique_imports','unique_dlls','unique_apis','section_names_count','section_total_size',
-        'section_total_vsize','avg_section_size','avg_section_vsize','section_entropy_avg','section_entropy_min','section_entropy_max','section_entropy_std','packed_sections_ratio','subsystem','dll_characteristics',
-        'code_section_ratio','data_section_ratio','code_vsize_ratio','data_vsize_ratio',
-        'has_nx_compat','has_aslr','has_seh','has_guard_cf','has_resources','has_debug_info',
-        'has_tls','has_relocs','has_exceptions','dll_name_avg_length','dll_name_max_length',
-        'dll_name_min_length','section_name_avg_length','section_name_max_length','section_name_min_length',
-        'export_name_avg_length','export_name_max_length','export_name_min_length','max_section_size',
-        'min_section_size','long_sections_count','short_sections_count','section_size_std','section_size_cv',
-        'executable_writable_sections','file_entropy_avg','file_entropy_min','file_entropy_max','file_entropy_range',
-        'zero_byte_ratio','printable_byte_ratio','trailing_data_size','trailing_data_ratio','imported_system_dlls_count',
-        'exports_density','has_large_trailing_data','pe_header_size','header_size_ratio','file_entropy_std',
-        'file_entropy_q25','file_entropy_q75','file_entropy_median','high_entropy_ratio','low_entropy_ratio',
-        'entropy_change_rate','entropy_change_std','executable_sections_count','writable_sections_count',
-        'readable_sections_count','executable_sections_ratio','writable_sections_ratio','readable_sections_ratio',
-        'executable_code_density','non_standard_executable_sections_count','rwx_sections_count','rwx_sections_ratio',
-        'special_char_ratio','long_sections_ratio','short_sections_ratio','dll_imports_entropy','api_imports_entropy',
-        'imported_system_dlls_ratio','resources_count','alignment_mismatch_count','alignment_mismatch_ratio','entry_point_ratio',
-        'syscall_api_ratio','import_ordinal_only_count','import_ordinal_only_ratio','avg_imports_per_dll','exports_name_ratio','entry_in_nonstandard_section_flag','tls_callbacks_count','reloc_blocks_count','reloc_entries_count','checksum_zero_flag','api_network_ratio','api_process_ratio','api_filesystem_ratio','api_registry_ratio','overlay_entropy','overlay_high_entropy_flag','packer_keyword_hits_count','packer_keyword_hits_ratio'
-    ]
+    feature_order = list(PE_FEATURE_ORDER)
     for sec in COMMON_SECTIONS:
         feature_order.append(f'has_{sec}_section')
     feature_order.extend([
