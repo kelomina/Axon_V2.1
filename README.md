@@ -113,10 +113,14 @@ flowchart LR
 
 - 运行路由系统训练脚本：
   ```bash
-  python -m training.train_routing
+  python main.py train-routing
+  # 或者复用已提取的特征（默认行为）
+  python main.py train-routing --use-existing-features
+  # 或者强制提取并保存特征
+  python main.py train-routing --save-features
   ```
   该脚本会自动：
-  1. 加载或提取特征。
+  1. 加载或提取特征（支持 `--use-existing-features` 和 `--save-features` 参数）。
   2. 根据启发式规则（加壳特征）生成路由标签。
   3. 训练 Gating Model（PyTorch MLP/Transformer）。
   4. 分割数据集并分别训练 Normal Expert 和 Packed Expert (LightGBM)。

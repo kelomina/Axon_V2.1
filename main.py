@@ -73,6 +73,8 @@ def main():
     sp_serve.add_argument('--port', type=int, default=DEFAULT_SERVE_PORT, help=HELP_PORT)
 
     sp_train_routing = subs.add_parser('train-routing', help='训练路由门控与专家模型系统')
+    sp_train_routing.add_argument('--use-existing-features', action='store_true', help=HELP_USE_EXISTING_FEATURES)
+    sp_train_routing.add_argument('--save-features', action='store_true', help=HELP_SAVE_FEATURES)
 
     args = parser.parse_args()
 
@@ -147,7 +149,7 @@ def main():
     elif args.command == 'train-routing':
         from training import train_routing
         try:
-            train_routing.main()
+            train_routing.main(args)
         except Exception as e:
             logger.error(f'路由系统训练失败: {e}')
             raise
