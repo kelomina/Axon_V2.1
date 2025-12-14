@@ -23,21 +23,6 @@
   - fast-hdbscan（多核优化的 HDBSCAN 实现，用于家族聚类，finetune 必备，`finetune.py:21`）
   - pefile（PE 结构读取）、matplotlib / seaborn（可视化）、tqdm（进度条）
 
-- 模块架构
-
-```mermaid
-flowchart LR
-  A[原始样本 benign/malicious] --> B[特征提取 features/*]
-  B --> C[处理数据 data/processed_lightgbm + metadata.json]
-  C --> D[预训练 pretrain.py → LightGBM]
-  D --> E[评估 reports/model_evaluation.png]
-  D --> F[特征文件 extracted_features.pkl]
-  F --> G[家族聚类 finetune.py (fast_hdbscan)]
-  G --> H[family_classifier.pkl]
-  H --> I[命令行扫描 scanner.py]
-  I --> J[HTTP 服务 scanner_service.py]
-```
-
 ## 环境要求
 
 - 操作系统：Windows 10/11 或 Linux（x86_64）
