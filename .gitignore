@@ -214,3 +214,4 @@ malicious_samples
 extracted_features.pkl
 tests
 scan_results
+reports/
