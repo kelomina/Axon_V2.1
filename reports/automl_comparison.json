@@ -3,15 +3,15 @@
   "metric": "roc_auc",
   "cv_folds": 2,
   "trials": 5,
-  "baseline_score": 0.5673194614443084,
-  "tuned_score": 0.5669114647082824,
+  "baseline_score": 0.5,
+  "tuned_score": 0.5789898989898989,
   "best_params": {
-    "num_leaves": 376,
-    "learning_rate": 0.0352751586581965,
-    "feature_fraction": 0.8928395364841089,
-    "bagging_fraction": 0.9617114241120012,
-    "bagging_freq": 7,
-    "min_gain_to_split": 0.09134491548586238,
-    "min_data_in_leaf": 25
+    "num_leaves": 408,
+    "learning_rate": 0.08325874609388015,
+    "feature_fraction": 0.706709733716208,
+    "bagging_fraction": 0.7328472428677135,
+    "bagging_freq": 13,
+    "min_gain_to_split": 0.13508020452364697,
+    "min_data_in_leaf": 31
   }
 }

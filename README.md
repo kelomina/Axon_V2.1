@@ -228,7 +228,7 @@
   ```
 
 - 性能优化建议
-- 训练阶段：调整 `LIGHTGBM_NUM_THREADS_MAX`、`num_leaves`、`learning_rate`、`DEFAULT_EARLY_STOPPING_ROUNDS`（默认 200）。当前默认：`num_leaves=30`、`learning_rate=0.07`（`config/config.py`，`training/train_lightgbm.py`）
+- 训练阶段：调整 `LIGHTGBM_NUM_THREADS_MAX`、`num_leaves`、`learning_rate`、`DEFAULT_EARLY_STOPPING_ROUNDS`（默认 200）。当前默认：`num_leaves=281`、`learning_rate=0.0054273608259950085`（`config/config.py`，`training/train_lightgbm.py`）
   - 推理阶段：合理设置 `DEFAULT_MAX_FILE_SIZE`，使用缓存文件 `scan_cache.json`
   - 可视化与聚类：降维到 `PCA_DIMENSION_FOR_CLUSTERING`，控制采样量 `VIS_SAMPLE_SIZE`
 

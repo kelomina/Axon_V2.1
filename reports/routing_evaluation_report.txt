@@ -1,12 +1,20 @@
 Routing System Evaluation Report
 ================================
 
-System Accuracy: 0.9000
+System Accuracy: 0.9851
 
 Classification Report:
-Report
+              precision    recall  f1-score   support
+
+      Benign       0.97      1.00      0.98     50806
+   Malicious       1.00      0.98      0.99     82781
+
+    accuracy                           0.99    133587
+   macro avg       0.98      0.99      0.98    133587
+weighted avg       0.99      0.99      0.99    133587
+
 
 Routing Statistics:
-    Total: 5
-    Routed to Normal Expert: 5 (100.0%)
-    Routed to Packed Expert: 0 (0.0%)
+    Total: 133587
+    Routed to Normal Expert: 130473 (97.7%)
+    Routed to Packed Expert: 3114 (2.3%)
