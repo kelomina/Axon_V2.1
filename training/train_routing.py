@@ -15,7 +15,7 @@ from config.config import (
     GATING_LEARNING_RATE, GATING_EPOCHS, GATING_BATCH_SIZE, GATING_MODEL_PATH,
     EXPERT_NORMAL_MODEL_PATH, EXPERT_PACKED_MODEL_PATH,
     FEATURES_PKL_PATH, PROCESSED_DATA_DIR, METADATA_FILE, DEFAULT_MAX_FILE_SIZE,
-    DEFAULT_TEST_SIZE, DEFAULT_RANDOM_STATE,
+    DEFAULT_TEST_SIZE, DEFAULT_RANDOM_STATE, DEFAULT_NUM_BOOST_ROUND, DEFAULT_INCREMENTAL_ROUNDS,
     ROUTING_EVAL_REPORT_PATH, ROUTING_CONFUSION_MATRIX_PATH, MODEL_EVAL_FIG_DIR,
     EVAL_FONT_FAMILY, PREDICTION_THRESHOLD,
     EVAL_TOP_FEATURE_COUNT,
@@ -126,10 +126,9 @@ def evaluate_routing_system(X_test, y_test, files_test=None):
         tpr_t = tp / (tp + fn) if (tp + fn) > 0 else 0.0
         print(f"    t={t:.2f} acc={acc_t:.4f} pre={pre_t:.4f} rec={rec_t:.4f} FPR={fpr_t:.4f} TPR={tpr_t:.4f} FP={int(fp)}")
 
-    # Feature Importance (from Expert Normal as proxy for general importance)
-    if routing_model.expert_normal and routing_model.expert_normal.model:
+    if routing_model.expert_normal:
         print(f"\n[*] Top {EVAL_TOP_FEATURE_COUNT} important features (Expert Normal):")
-        feature_importance = routing_model.expert_normal.model.feature_importance(importance_type='gain')
+        feature_importance = routing_model.expert_normal.feature_importance(importance_type='gain')
         indices_sorted = np.argsort(feature_importance)[::-1]
         for rank, idx in enumerate(indices_sorted[:EVAL_TOP_FEATURE_COUNT], 1):
             semantics = get_feature_semantics(idx)
@@ -256,7 +255,11 @@ def train_expert_model_with_finetuning(X_train, y_train, X_val, y_val, files_tra
     print(f"\n[*] Training {expert_name}...")
     
     existing_model = None
-    if args.incremental_training and os.path.exists(model_path):
+    inc_training = getattr(args, 'incremental_training', False)
+    inc_rounds = getattr(args, 'incremental_rounds', DEFAULT_INCREMENTAL_ROUNDS)
+    num_rounds = getattr(args, 'num_boost_round', DEFAULT_NUM_BOOST_ROUND)
+    fp_finetune = getattr(args, 'finetune_on_false_positives', False)
+    if inc_training and os.path.exists(model_path):
         print(f"    Loading existing model for incremental training: {model_path}")
         existing_model = load_existing_model(model_path)
 
@@ -265,18 +268,17 @@ def train_expert_model_with_finetuning(X_train, y_train, X_val, y_val, files_tra
         model = train_lightgbm_model(
             X_train, y_train, X_val, y_val, 
             files_train=files_train,
-            num_boost_round=args.incremental_rounds,
+            num_boost_round=inc_rounds,
             init_model=existing_model
         )
     else:
         model = train_lightgbm_model(
             X_train, y_train, X_val, y_val,
             files_train=files_train,
-            num_boost_round=args.num_boost_round
+            num_boost_round=num_rounds
         )
 
-    # False Positive Finetuning
-    if args.finetune_on_false_positives:
+    if fp_finetune:
         print(f"[*] Starting False Positive Finetuning for {expert_name}...")
         
         # We need to evaluate on a hold-out set to find FPs. 
@@ -321,8 +323,8 @@ def train_expert_model_with_finetuning(X_train, y_train, X_val, y_val, files_tra
             model = train_lightgbm_model(
                 current_X_train, current_y_train, X_val, y_val,
                 files_train=current_files_train,
-                false_positive_files=files_fps, # Highlight these specific files for weighting
-                num_boost_round=args.num_boost_round,
+                false_positive_files=files_fps,
+                num_boost_round=num_rounds,
                 init_model=model,
                 iteration=i+2
             )
@@ -339,26 +341,30 @@ def main(args=None):
         # But really this function expects args object.
         pass
 
-    # 1. Load Data
     use_existing = args.use_existing_features if args else False
     save_features_flag = args.save_features if args else False
+    fast_dev_run = getattr(args, 'fast_dev_run', False)
+    incremental_training = getattr(args, 'incremental_training', False)
+    incremental_data_dir = getattr(args, 'incremental_data_dir', None)
+    incremental_raw_data_dir = getattr(args, 'incremental_raw_data_dir', None)
+    max_file_size = getattr(args, 'max_file_size', DEFAULT_MAX_FILE_SIZE)
+    file_extensions = getattr(args, 'file_extensions', None)
+    label_inference = getattr(args, 'label_inference', 'filename')
     
     X, y, files = None, None, None
 
-    # Incremental Data Loading
-    if args and args.incremental_training and args.incremental_data_dir:
-        if args.incremental_raw_data_dir:
+    if incremental_training and incremental_data_dir:
+        if incremental_raw_data_dir:
             print("[*] Extracting features from raw files (Incremental)...")
             extract_features_from_raw_files(
-                args.incremental_raw_data_dir,
-                args.incremental_data_dir,
-                args.max_file_size,
-                args.file_extensions,
-                args.label_inference
+                incremental_raw_data_dir,
+                incremental_data_dir,
+                max_file_size,
+                file_extensions,
+                label_inference
             )
-        
         print("[*] Loading incremental dataset...")
-        X, y, files = load_incremental_dataset(args.incremental_data_dir, args.max_file_size)
+        X, y, files = load_incremental_dataset(incremental_data_dir, max_file_size)
         if X is None:
             print("[!] Failed to load incremental data.")
             return
@@ -378,7 +384,7 @@ def main(args=None):
             
     if X is None:
         print(f"[*] Extracting features (this may take a while)...")
-        X, y, files = load_dataset(PROCESSED_DATA_DIR, METADATA_FILE, DEFAULT_MAX_FILE_SIZE, fast_dev_run=args.fast_dev_run if args else False)
+        X, y, files = load_dataset(PROCESSED_DATA_DIR, METADATA_FILE, max_file_size, fast_dev_run=fast_dev_run)
         
         if save_features_flag:
             save_features_to_pickle(X, y, files, FEATURES_PKL_PATH)

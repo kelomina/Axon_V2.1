@@ -75,6 +75,18 @@ def main():
     sp_train_routing = subs.add_parser('train-routing', help='训练路由门控与专家模型系统')
     sp_train_routing.add_argument('--use-existing-features', action='store_true', help=HELP_USE_EXISTING_FEATURES)
     sp_train_routing.add_argument('--save-features', action='store_true', help=HELP_SAVE_FEATURES)
+    sp_train_routing.add_argument('--fast-dev-run', action='store_true', help=HELP_FAST_DEV_RUN)
+    sp_train_routing.add_argument('--finetune-on-false-positives', action='store_true', help=HELP_FINETUNE_ON_FALSE_POSITIVES)
+    sp_train_routing.add_argument('--incremental-training', action='store_true', help=HELP_INCREMENTAL_TRAINING)
+    sp_train_routing.add_argument('--incremental-data-dir', type=str, help=HELP_INCREMENTAL_DATA_DIR)
+    sp_train_routing.add_argument('--incremental-raw-data-dir', type=str, help=HELP_INCREMENTAL_RAW_DATA_DIR)
+    sp_train_routing.add_argument('--file-extensions', type=str, nargs='+', help=HELP_FILE_EXTENSIONS)
+    sp_train_routing.add_argument('--label-inference', type=str, default='filename', choices=['filename', 'directory'], help=HELP_LABEL_INFERENCE)
+    sp_train_routing.add_argument('--num-boost-round', type=int, default=DEFAULT_NUM_BOOST_ROUND, help=HELP_NUM_BOOST_ROUND)
+    sp_train_routing.add_argument('--incremental-rounds', type=int, default=DEFAULT_INCREMENTAL_ROUNDS, help=HELP_INCREMENTAL_ROUNDS)
+    sp_train_routing.add_argument('--incremental-early-stopping', type=int, default=DEFAULT_INCREMENTAL_EARLY_STOPPING, help=HELP_INCREMENTAL_EARLY_STOPPING)
+    sp_train_routing.add_argument('--max-finetune-iterations', type=int, default=DEFAULT_MAX_FINETUNE_ITERATIONS, help=HELP_MAX_FINETUNE_ITERATIONS)
+    sp_train_routing.add_argument('--max-file-size', type=int, default=DEFAULT_MAX_FILE_SIZE, help=HELP_MAX_FILE_SIZE)
 
     args = parser.parse_args()
 

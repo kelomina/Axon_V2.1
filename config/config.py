@@ -184,7 +184,7 @@ EVAL_TOP_FEATURE_COUNT = 50
 # EVAL_FONT_FAMILY：评估图中文字体；用途：确保中文标签正常显示；推荐值：['SimHei','Microsoft YaHei']
 EVAL_FONT_FAMILY = ['SimHei', 'Microsoft YaHei']
 # DEFAULT_TEST_SIZE：测试集比例；用途：数据集划分的测试集占比；推荐值：0.1（0.1-0.2）
-DEFAULT_TEST_SIZE = 0.2
+DEFAULT_TEST_SIZE = 0.4
 # DEFAULT_RANDOM_STATE：随机种子；用途：保证训练/可视化结果可复现；推荐值：42
 DEFAULT_RANDOM_STATE = 42
 # COMMON_SECTIONS：常见节名列表；用途：节存在布尔特征与结构判断；推荐值：['.text','.data','.rdata','.reloc','.rsrc']
