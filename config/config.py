@@ -134,10 +134,12 @@ HELP_PORT = 'Port for FastAPI service'
 MODEL_EVAL_FIG_DIR = os.path.join(PROJECT_ROOT, 'reports')
 # MODEL_EVAL_FIG_PATH：模型评估图路径；用途：保存准确率/混淆矩阵等；推荐值：reports/model_evaluation.png
 MODEL_EVAL_FIG_PATH = os.path.join(MODEL_EVAL_FIG_DIR, 'model_evaluation.png')
+MODEL_EVAL_AUC_PATH = os.path.join(MODEL_EVAL_FIG_DIR, 'model_auc_curve.png')
 # ROUTING_EVAL_REPORT_PATH：路由评估报告路径；用途：保存路由系统评估文本；推荐值：reports/routing_evaluation_report.txt
 ROUTING_EVAL_REPORT_PATH = os.path.join(MODEL_EVAL_FIG_DIR, 'routing_evaluation_report.txt')
 # ROUTING_CONFUSION_MATRIX_PATH：路由混淆矩阵路径；用途：保存路由系统混淆矩阵图；推荐值：reports/routing_confusion_matrix.png
 ROUTING_CONFUSION_MATRIX_PATH = os.path.join(MODEL_EVAL_FIG_DIR, 'routing_confusion_matrix.png')
+ROUTING_ROC_AUC_PATH = os.path.join(MODEL_EVAL_FIG_DIR, 'routing_roc_auc.png')
 
 # 路由系统训练参数
 # PACKED_SECTIONS_RATIO_THRESHOLD：加壳节比例阈值；用途：判定是否加壳；推荐值：0.4

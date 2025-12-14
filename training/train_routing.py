@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, precision_score, recall_score
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, precision_score, recall_score, roc_curve, roc_auc_score
 
 from config.config import (
     GATING_MODE, GATING_INPUT_DIM, GATING_HIDDEN_DIM, GATING_OUTPUT_DIM,
@@ -166,6 +166,23 @@ def evaluate_routing_system(X_test, y_test, files_test=None):
         print(f"[+] Confusion matrix plot saved to {ROUTING_CONFUSION_MATRIX_PATH}")
     except Exception as e:
         print(f"[!] Failed to generate confusion matrix plot: {e}")
+    try:
+        fpr, tpr, _ = roc_curve(y_test, predictions)
+        auc_value = roc_auc_score(y_test, predictions)
+        plt.figure(figsize=(8, 6))
+        plt.plot(fpr, tpr, label=f'AUC={auc_value:.4f}', color='darkorange')
+        plt.plot([0, 1], [0, 1], linestyle='--', color='gray')
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title('Routing System ROC Curve')
+        plt.legend(loc='lower right')
+        plt.tight_layout()
+        from config.config import ROUTING_ROC_AUC_PATH
+        plt.savefig(ROUTING_ROC_AUC_PATH)
+        plt.close()
+        print(f"[+] ROC AUC curve saved to {ROUTING_ROC_AUC_PATH}")
+    except Exception as e:
+        print(f"[!] Failed to generate ROC AUC curve: {e}")
 
 def generate_routing_labels(X):
     """

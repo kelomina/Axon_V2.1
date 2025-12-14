@@ -1,9 +1,9 @@
 import os
 import numpy as np
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, precision_score
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, precision_score, roc_curve, roc_auc_score
 import matplotlib.pyplot as plt
 import seaborn as sns
-from config.config import MODEL_EVAL_FIG_DIR, MODEL_EVAL_FIG_PATH, EVAL_HIST_BINS, PREDICTION_THRESHOLD, EVAL_FONT_FAMILY
+from config.config import MODEL_EVAL_FIG_DIR, MODEL_EVAL_FIG_PATH, EVAL_HIST_BINS, PREDICTION_THRESHOLD, EVAL_FONT_FAMILY, MODEL_EVAL_AUC_PATH
 
 def evaluate_model(model, X_test, y_test, files_test=None):
     print("[*] Evaluating model...")
@@ -56,6 +56,23 @@ def evaluate_model(model, X_test, y_test, files_test=None):
         plt.savefig(MODEL_EVAL_FIG_PATH, dpi=300, bbox_inches='tight')
         plt.show()
         print(f"[+] Evaluation charts saved to: {MODEL_EVAL_FIG_PATH}")
+        try:
+            fpr, tpr, _ = roc_curve(y_test, y_pred_proba)
+            auc_value = roc_auc_score(y_test, y_pred_proba)
+            plt.figure(figsize=(8, 6))
+            plt.plot(fpr, tpr, label=f'AUC={auc_value:.4f}', color='darkorange')
+            plt.plot([0, 1], [0, 1], linestyle='--', color='gray')
+            plt.xlabel('False Positive Rate')
+            plt.ylabel('True Positive Rate')
+            plt.title('ROC Curve')
+            os.makedirs(MODEL_EVAL_FIG_DIR, exist_ok=True)
+            plt.legend(loc='lower right')
+            plt.tight_layout()
+            plt.savefig(MODEL_EVAL_AUC_PATH, dpi=300, bbox_inches='tight')
+            plt.close()
+            print(f"[+] ROC AUC curve saved to: {MODEL_EVAL_AUC_PATH}")
+        except Exception:
+            pass
     else:
         print("[*] Skipping visualization chart generation as test set contains only one category")
     return accuracy, false_positives

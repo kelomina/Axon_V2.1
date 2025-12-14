@@ -82,6 +82,20 @@ flowchart LR
   python main.py pretrain --save-features
   ```
 
+- 一键训练集成（特征→预训练→路由训练→评估→聚类→保存）
+  ```bash
+  python main.py train-all
+  ```
+  - 自动执行特征提取或复用 `extracted_features.pkl`
+  - 训练 LightGBM 基础模型并保存至 `saved_models/lightgbm_model.txt`
+  - 训练路由系统（门控模型与两套专家模型），保存至 `saved_models/`
+  - 生成评估可视化，包括混淆矩阵与 ROC AUC 曲线：
+    - `reports/model_evaluation.png`
+    - `reports/model_auc_curve.png`
+    - `reports/routing_confusion_matrix.png`
+    - `reports/routing_roc_auc.png`
+  - 进行家族聚类并训练分类器，保存至 `hdbscan_cluster_results/family_classifier.pkl`
+
 - 家族聚类与分类器训练（生成 `family_classifier.pkl` 与可视化图）
   ```bash
   python main.py finetune --plot-pca --min-cluster-size 30 --min-family-size 10

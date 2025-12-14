@@ -87,6 +87,8 @@ def main():
     sp_train_routing.add_argument('--incremental-early-stopping', type=int, default=DEFAULT_INCREMENTAL_EARLY_STOPPING, help=HELP_INCREMENTAL_EARLY_STOPPING)
     sp_train_routing.add_argument('--max-finetune-iterations', type=int, default=DEFAULT_MAX_FINETUNE_ITERATIONS, help=HELP_MAX_FINETUNE_ITERATIONS)
     sp_train_routing.add_argument('--max-file-size', type=int, default=DEFAULT_MAX_FILE_SIZE, help=HELP_MAX_FILE_SIZE)
+    
+    sp_train_all = subs.add_parser('train-all', help='一键执行特征提取、模型训练、评估与聚类')
 
     args = parser.parse_args()
 
@@ -164,6 +166,61 @@ def main():
             train_routing.main(args)
         except Exception as e:
             logger.error(f'路由系统训练失败: {e}')
+            raise
+    elif args.command == 'train-all':
+        import pretrain
+        from training import train_routing
+        import finetune
+        try:
+            pre_args = argparse.Namespace(
+                max_file_size=DEFAULT_MAX_FILE_SIZE,
+                fast_dev_run=False,
+                save_features=True,
+                finetune_on_false_positives=False,
+                incremental_training=False,
+                incremental_data_dir=None,
+                incremental_raw_data_dir=None,
+                file_extensions=None,
+                label_inference='filename',
+                num_boost_round=DEFAULT_NUM_BOOST_ROUND,
+                incremental_rounds=DEFAULT_INCREMENTAL_ROUNDS,
+                incremental_early_stopping=DEFAULT_INCREMENTAL_EARLY_STOPPING,
+                max_finetune_iterations=DEFAULT_MAX_FINETUNE_ITERATIONS,
+                use_existing_features=True
+            )
+            pretrain.main(pre_args)
+            routing_args = argparse.Namespace(
+                use_existing_features=True,
+                save_features=False,
+                fast_dev_run=False,
+                incremental_training=False,
+                incremental_data_dir=None,
+                incremental_raw_data_dir=None,
+                file_extensions=None,
+                label_inference='filename',
+                num_boost_round=DEFAULT_NUM_BOOST_ROUND,
+                incremental_rounds=DEFAULT_INCREMENTAL_ROUNDS,
+                incremental_early_stopping=DEFAULT_INCREMENTAL_EARLY_STOPPING,
+                max_finetune_iterations=DEFAULT_MAX_FINETUNE_ITERATIONS,
+                max_file_size=DEFAULT_MAX_FILE_SIZE
+            )
+            train_routing.main(routing_args)
+            fine_args = argparse.Namespace(
+                data_dir=PROCESSED_DATA_DIR,
+                features_path=FEATURES_PKL_PATH,
+                save_dir=HDBSCAN_SAVE_DIR,
+                max_file_size=DEFAULT_MAX_FILE_SIZE,
+                min_cluster_size=DEFAULT_MIN_CLUSTER_SIZE,
+                min_samples=DEFAULT_MIN_SAMPLES,
+                min_family_size=DEFAULT_MIN_FAMILY_SIZE,
+                plot_pca=False,
+                explain_discrepancy=False,
+                treat_noise_as_family=False
+            )
+            finetune.main(fine_args)
+            logger.info('训练与聚类流程已完成')
+        except Exception as e:
+            logger.error(f'一键训练失败: {e}')
             raise
 
 if __name__ == '__main__':
