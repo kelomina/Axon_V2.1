@@ -112,6 +112,14 @@ flowchart LR
   python main.py serve --port 8000
   ```
 
+- 自动调优与交叉测试（AutoML）
+  ```bash
+  python main.py auto-tune --method optuna --trials 50 --cv 5 --metric roc_auc --use-existing-features
+  python main.py auto-tune --method hyperopt --trials 50 --cv 5 --metric accuracy --use-existing-features
+  ```
+  - 输出结果保存至 `reports/automl_comparison.json`
+  - 支持参数：`--method`、`--trials`、`--cv`、`--metric`、`--fast-dev-run`、`--max-file-size`
+
 - HTTP 接口
   - `POST /scan/file`：`{"file_path": "C:\\sample.exe"}`
   - `POST /scan/upload`：上传文件进行扫描（multipart/form-data）
@@ -246,6 +254,7 @@ flowchart LR
   - 模型/分类器路径不存在导致启动失败（请检查路径）`scanner_service.py:59-65`
   - 非 PE 文件会被跳过（属预期行为）`scanner.py:211-213`
   - 特征维度不一致会自动填充/截断并记录汇总（数据/增量/扫描路径均有统计文件输出）`training/data_loader.py:61-73,99-113`
+  - 训练与评估统一使用带列名的特征 DataFrame，列名规范为 `feature_{i}` 且顺序一致，避免出现 sklearn 提示 “X does not have valid feature names”，相关处理见 `training/automl.py:25-36,54-60`
 
 - 故障排查指南
   - 确认依赖与 Python 版本；运行 `pip list` 检查 `fast-hdbscan`、`lightgbm`

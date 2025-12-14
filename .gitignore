@@ -211,9 +211,6 @@ __marimo__/
 data
 benign_samples
 malicious_samples
-saved_models
-hdbscan_cluster_results
-reports
 extracted_features.pkl
 tests
 scan_results

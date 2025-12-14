@@ -87,6 +87,11 @@ HELP_INCREMENTAL_ROUNDS = 'Number of rounds for incremental training'
 HELP_INCREMENTAL_EARLY_STOPPING = 'Early stopping rounds for incremental training'
 HELP_MAX_FINETUNE_ITERATIONS = 'Maximum reinforcement training iterations'
 HELP_USE_EXISTING_FEATURES = 'Use existing extracted_features.pkl file, skip feature extraction'
+HELP_AUTOML_METHOD = 'AutoML method: optuna or hyperopt'
+HELP_AUTOML_TRIALS = 'AutoML tuning trials count'
+HELP_AUTOML_CV = 'Cross-validation folds for AutoML comparison'
+HELP_AUTOML_METRIC = 'Evaluation metric: roc_auc or accuracy'
+HELP_AUTOML_FAST_DEV_RUN = 'Use small subset for AutoML quick run'
 
 
 # 聚类与服务参数：控制 HDBSCAN 与服务端行为
@@ -140,6 +145,7 @@ ROUTING_EVAL_REPORT_PATH = os.path.join(MODEL_EVAL_FIG_DIR, 'routing_evaluation_
 # ROUTING_CONFUSION_MATRIX_PATH：路由混淆矩阵路径；用途：保存路由系统混淆矩阵图；推荐值：reports/routing_confusion_matrix.png
 ROUTING_CONFUSION_MATRIX_PATH = os.path.join(MODEL_EVAL_FIG_DIR, 'routing_confusion_matrix.png')
 ROUTING_ROC_AUC_PATH = os.path.join(MODEL_EVAL_FIG_DIR, 'routing_roc_auc.png')
+AUTOML_RESULTS_PATH = os.path.join(MODEL_EVAL_FIG_DIR, 'automl_comparison.json')
 
 # 路由系统训练参数
 # PACKED_SECTIONS_RATIO_THRESHOLD：加壳节比例阈值；用途：判定是否加壳；推荐值：0.4
@@ -247,3 +253,24 @@ FEATURE_GATING_TOP_K = 1150
 FEATURE_GATING_REPORT_PATH = os.path.join(MODEL_EVAL_FIG_DIR, 'feature_gating_experiment.json')
 FEATURE_GATING_K_START = 50
 FEATURE_GATING_K_STEP = 50
+
+AUTOML_ENABLED = True
+AUTOML_METHOD_DEFAULT = 'optuna'
+AUTOML_TRIALS_DEFAULT = 50
+AUTOML_CV_FOLDS_DEFAULT = 5
+AUTOML_METRIC_DEFAULT = 'roc_auc'
+AUTOML_TIMEOUT = None
+AUTOML_LGBM_NUM_LEAVES_MIN = 16
+AUTOML_LGBM_NUM_LEAVES_MAX = 512
+AUTOML_LGBM_LEARNING_RATE_MIN = 0.005
+AUTOML_LGBM_LEARNING_RATE_MAX = 0.2
+AUTOML_LGBM_FEATURE_FRACTION_MIN = 0.6
+AUTOML_LGBM_FEATURE_FRACTION_MAX = 1.0
+AUTOML_LGBM_BAGGING_FRACTION_MIN = 0.6
+AUTOML_LGBM_BAGGING_FRACTION_MAX = 1.0
+AUTOML_LGBM_MIN_DATA_IN_LEAF_MIN = 10
+AUTOML_LGBM_MIN_DATA_IN_LEAF_MAX = 100
+AUTOML_LGBM_MIN_GAIN_TO_SPLIT_MIN = 0.0
+AUTOML_LGBM_MIN_GAIN_TO_SPLIT_MAX = 0.2
+AUTOML_LGBM_BAGGING_FREQ_MIN = 1
+AUTOML_LGBM_BAGGING_FREQ_MAX = 20

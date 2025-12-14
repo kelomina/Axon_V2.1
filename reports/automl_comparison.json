@@ -1,0 +1,17 @@
+{
+  "method": "optuna",
+  "metric": "roc_auc",
+  "cv_folds": 2,
+  "trials": 5,
+  "baseline_score": 0.5673194614443084,
+  "tuned_score": 0.5669114647082824,
+  "best_params": {
+    "num_leaves": 376,
+    "learning_rate": 0.0352751586581965,
+    "feature_fraction": 0.8928395364841089,
+    "bagging_fraction": 0.9617114241120012,
+    "bagging_freq": 7,
+    "min_gain_to_split": 0.09134491548586238,
+    "min_data_in_leaf": 25
+  }
+}

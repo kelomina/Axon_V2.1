@@ -16,7 +16,8 @@ from config.config import (
     HELP_MIN_CLUSTER_SIZE, HELP_MIN_SAMPLES, HELP_MIN_FAMILY_SIZE, HELP_PLOT_PCA,
     HELP_EXPLAIN_DISCREPANCY, HELP_TREAT_NOISE_AS_FAMILY, HELP_LIGHTGBM_MODEL_PATH,
     HELP_FAMILY_CLASSIFIER_PATH, HELP_CACHE_FILE, HELP_FILE_PATH, HELP_DIR_PATH,
-    HELP_RECURSIVE, HELP_OUTPUT_PATH, HELP_PORT
+    HELP_RECURSIVE, HELP_OUTPUT_PATH, HELP_PORT,
+    HELP_AUTOML_METHOD, HELP_AUTOML_TRIALS, HELP_AUTOML_CV, HELP_AUTOML_METRIC, HELP_AUTOML_FAST_DEV_RUN
 )
 from utils.logging_utils import get_logger
 
@@ -89,6 +90,14 @@ def main():
     sp_train_routing.add_argument('--max-file-size', type=int, default=DEFAULT_MAX_FILE_SIZE, help=HELP_MAX_FILE_SIZE)
     
     sp_train_all = subs.add_parser('train-all', help='一键执行特征提取、模型训练、评估与聚类')
+    sp_autotune = subs.add_parser('auto-tune', help='AutoML超参调优与交叉测试对比')
+    sp_autotune.add_argument('--method', type=str, default='optuna', choices=['optuna', 'hyperopt'], help=HELP_AUTOML_METHOD)
+    sp_autotune.add_argument('--trials', type=int, default=50, help=HELP_AUTOML_TRIALS)
+    sp_autotune.add_argument('--cv', type=int, default=5, help=HELP_AUTOML_CV)
+    sp_autotune.add_argument('--metric', type=str, default='roc_auc', choices=['roc_auc', 'accuracy'], help=HELP_AUTOML_METRIC)
+    sp_autotune.add_argument('--use-existing-features', action='store_true', help=HELP_USE_EXISTING_FEATURES)
+    sp_autotune.add_argument('--fast-dev-run', action='store_true', help=HELP_AUTOML_FAST_DEV_RUN)
+    sp_autotune.add_argument('--max-file-size', type=int, default=DEFAULT_MAX_FILE_SIZE, help=HELP_MAX_FILE_SIZE)
 
     args = parser.parse_args()
 
@@ -221,6 +230,14 @@ def main():
             logger.info('训练与聚类流程已完成')
         except Exception as e:
             logger.error(f'一键训练失败: {e}')
+            raise
+    elif args.command == 'auto-tune':
+        from training import automl
+        try:
+            result = automl.main(args)
+            logger.info(f"AutoML完成: {result}")
+        except Exception as e:
+            logger.error(f'AutoML失败: {e}')
             raise
 
 if __name__ == '__main__':
