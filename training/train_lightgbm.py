@@ -12,7 +12,7 @@ def warmup_scheduler(warmup_rounds=WARMUP_ROUNDS, start_lr=WARMUP_START_LR, targ
                  print(f"[*] Warmup: Iteration {env.iteration}, LR: {lr:.6f}")
     return callback
 
-def train_lightgbm_model(X_train, y_train, X_val, y_val, false_positive_files=None, files_train=None, iteration=1, num_boost_round=5000, init_model=None):
+def train_lightgbm_model(X_train, y_train, X_val, y_val, false_positive_files=None, files_train=None, iteration=1, num_boost_round=5000, init_model=None, params_override=None):
     print(f"[*] Training LightGBM model (Round {iteration})...")
     train_data = lgb.Dataset(X_train, label=y_train)
     val_data = lgb.Dataset(X_val, label=y_val, reference=train_data)
@@ -31,17 +31,30 @@ def train_lightgbm_model(X_train, y_train, X_val, y_val, false_positive_files=No
         val_data = lgb.Dataset(X_val, label=y_val, reference=train_data)
     learning_rate = DEFAULT_LIGHTGBM_LEARNING_RATE
     num_leaves = DEFAULT_LIGHTGBM_NUM_LEAVES
+    feature_fraction = LIGHTGBM_FEATURE_FRACTION
+    bagging_fraction = LIGHTGBM_BAGGING_FRACTION
+    bagging_freq = LIGHTGBM_BAGGING_FREQ
+    min_gain_to_split = LIGHTGBM_MIN_GAIN_TO_SPLIT
+    min_data_in_leaf = LIGHTGBM_MIN_DATA_IN_LEAF
+    if params_override:
+        learning_rate = params_override.get('learning_rate', learning_rate)
+        num_leaves = params_override.get('num_leaves', num_leaves)
+        feature_fraction = params_override.get('feature_fraction', feature_fraction)
+        bagging_fraction = params_override.get('bagging_fraction', bagging_fraction)
+        bagging_freq = params_override.get('bagging_freq', bagging_freq)
+        min_gain_to_split = params_override.get('min_gain_to_split', min_gain_to_split)
+        min_data_in_leaf = params_override.get('min_data_in_leaf', min_data_in_leaf)
     params = {
         'objective': 'binary',
         'metric': 'binary_logloss',
         'boosting_type': 'gbdt',
         'num_leaves': num_leaves,
         'learning_rate': learning_rate,
-        'feature_fraction': LIGHTGBM_FEATURE_FRACTION,
-        'bagging_fraction': LIGHTGBM_BAGGING_FRACTION,
-        'bagging_freq': LIGHTGBM_BAGGING_FREQ,
-        'min_gain_to_split': LIGHTGBM_MIN_GAIN_TO_SPLIT,
-        'min_data_in_leaf': LIGHTGBM_MIN_DATA_IN_LEAF,
+        'feature_fraction': feature_fraction,
+        'bagging_fraction': bagging_fraction,
+        'bagging_freq': bagging_freq,
+        'min_gain_to_split': min_gain_to_split,
+        'min_data_in_leaf': min_data_in_leaf,
         'verbose': -1,
         'num_threads': min(multiprocessing.cpu_count(), LIGHTGBM_NUM_THREADS_MAX)
     }

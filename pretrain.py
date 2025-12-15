@@ -102,7 +102,7 @@ def main(args):
             early_stopping_rounds=args.incremental_early_stopping
         )
     else:
-        model = train_lightgbm_model(X_train, y_train, X_val, y_val, iteration=1, num_boost_round=args.num_boost_round)
+        model = train_lightgbm_model(X_train, y_train, X_val, y_val, iteration=1, num_boost_round=args.num_boost_round, params_override=getattr(args, 'override_params', None))
 
     max_finetune_iterations = args.max_finetune_iterations
     finetune_iteration = 0
@@ -117,7 +117,8 @@ def main(args):
             model = train_lightgbm_model(X_train, y_train, X_val, y_val, 
                                        iteration=finetune_iteration+1, 
                                        num_boost_round=args.num_boost_round,
-                                       init_model=model)
+                                       init_model=model,
+                                       params_override=getattr(args, 'override_params', None))
 
             if finetune_iteration >= max_finetune_iterations:
 
@@ -149,7 +150,8 @@ def main(args):
                                            false_positives, files_train,
                                            finetune_iteration + targeted_iteration,
                                            num_boost_round=args.num_boost_round,
-                                           init_model=model)
+                                           init_model=model,
+                                           params_override=getattr(args, 'override_params', None))
 
                 print(f"\n[*] Evaluating after round {targeted_iteration} targeted reinforcement training...")
                 test_accuracy, false_positives = evaluate_model(model, X_test, y_test, files_test)

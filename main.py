@@ -17,7 +17,8 @@ from config.config import (
     HELP_EXPLAIN_DISCREPANCY, HELP_TREAT_NOISE_AS_FAMILY, HELP_LIGHTGBM_MODEL_PATH,
     HELP_FAMILY_CLASSIFIER_PATH, HELP_CACHE_FILE, HELP_FILE_PATH, HELP_DIR_PATH,
     HELP_RECURSIVE, HELP_OUTPUT_PATH, HELP_PORT,
-    HELP_AUTOML_METHOD, HELP_AUTOML_TRIALS, HELP_AUTOML_CV, HELP_AUTOML_METRIC, HELP_AUTOML_FAST_DEV_RUN
+    HELP_AUTOML_METHOD, HELP_AUTOML_TRIALS, HELP_AUTOML_CV, HELP_AUTOML_METRIC, HELP_AUTOML_FAST_DEV_RUN,
+    AUTOML_METHOD_DEFAULT, AUTOML_TRIALS_DEFAULT, AUTOML_CV_FOLDS_DEFAULT, AUTOML_METRIC_DEFAULT
 )
 from utils.logging_utils import get_logger
 
@@ -198,6 +199,39 @@ def main():
                 use_existing_features=True
             )
             pretrain.main(pre_args)
+            from training import automl
+            override_params = None
+            if os.path.exists(FEATURES_PKL_PATH):
+                auto_args = argparse.Namespace(
+                    method=AUTOML_METHOD_DEFAULT,
+                    trials=AUTOML_TRIALS_DEFAULT,
+                    cv=AUTOML_CV_FOLDS_DEFAULT,
+                    metric=AUTOML_METRIC_DEFAULT,
+                    use_existing_features=True,
+                    fast_dev_run=True,
+                    max_file_size=DEFAULT_MAX_FILE_SIZE
+                )
+                auto_result = automl.main(auto_args)
+                override_params = auto_result.get('best_params', None)
+                if override_params:
+                    pre_args2 = argparse.Namespace(
+                        max_file_size=DEFAULT_MAX_FILE_SIZE,
+                        fast_dev_run=False,
+                        save_features=True,
+                        finetune_on_false_positives=False,
+                        incremental_training=False,
+                        incremental_data_dir=None,
+                        incremental_raw_data_dir=None,
+                        file_extensions=None,
+                        label_inference='filename',
+                        num_boost_round=DEFAULT_NUM_BOOST_ROUND,
+                        incremental_rounds=DEFAULT_INCREMENTAL_ROUNDS,
+                        incremental_early_stopping=DEFAULT_INCREMENTAL_EARLY_STOPPING,
+                        max_finetune_iterations=DEFAULT_MAX_FINETUNE_ITERATIONS,
+                        use_existing_features=True,
+                        override_params=override_params
+                    )
+                    pretrain.main(pre_args2)
             routing_args = argparse.Namespace(
                 use_existing_features=True,
                 save_features=False,
@@ -213,6 +247,8 @@ def main():
                 max_finetune_iterations=DEFAULT_MAX_FINETUNE_ITERATIONS,
                 max_file_size=DEFAULT_MAX_FILE_SIZE
             )
+            if override_params:
+                routing_args.override_params = override_params
             train_routing.main(routing_args)
             fine_args = argparse.Namespace(
                 data_dir=PROCESSED_DATA_DIR,

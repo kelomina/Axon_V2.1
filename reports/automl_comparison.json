@@ -1,17 +1,17 @@
 {
   "method": "optuna",
   "metric": "roc_auc",
-  "cv_folds": 2,
-  "trials": 5,
-  "baseline_score": 0.5,
-  "tuned_score": 0.5789898989898989,
+  "cv_folds": 5,
+  "trials": 50,
+  "baseline_score": 0.999740562592472,
+  "tuned_score": 0.9997375018859715,
   "best_params": {
-    "num_leaves": 408,
-    "learning_rate": 0.08325874609388015,
-    "feature_fraction": 0.706709733716208,
-    "bagging_fraction": 0.7328472428677135,
-    "bagging_freq": 13,
-    "min_gain_to_split": 0.13508020452364697,
-    "min_data_in_leaf": 31
+    "num_leaves": 323,
+    "learning_rate": 0.007468799476795834,
+    "feature_fraction": 0.645719655892078,
+    "bagging_fraction": 0.892423285151578,
+    "bagging_freq": 2,
+    "min_gain_to_split": 0.022858967560430363,
+    "min_data_in_leaf": 67
   }
 }

@@ -286,13 +286,15 @@ def train_expert_model_with_finetuning(X_train, y_train, X_val, y_val, files_tra
             X_train, y_train, X_val, y_val, 
             files_train=files_train,
             num_boost_round=inc_rounds,
-            init_model=existing_model
+            init_model=existing_model,
+            params_override=getattr(args, 'override_params', None)
         )
     else:
         model = train_lightgbm_model(
             X_train, y_train, X_val, y_val,
             files_train=files_train,
-            num_boost_round=num_rounds
+            num_boost_round=num_rounds,
+            params_override=getattr(args, 'override_params', None)
         )
 
     if fp_finetune:
@@ -343,7 +345,8 @@ def train_expert_model_with_finetuning(X_train, y_train, X_val, y_val, files_tra
                 false_positive_files=files_fps,
                 num_boost_round=num_rounds,
                 init_model=model,
-                iteration=i+2
+                iteration=i+2,
+                params_override=getattr(args, 'override_params', None)
             )
             
     model.save_model(model_path)

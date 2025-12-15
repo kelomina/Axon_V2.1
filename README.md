@@ -73,6 +73,7 @@
   ```
   - 自动执行特征提取或复用 `extracted_features.pkl`
   - 训练 LightGBM 基础模型并保存至 `saved_models/lightgbm_model.txt`
+  - 内置 AutoML 超参调优并应用于本次训练（默认使用 `optuna`，结果保存至 `reports/automl_comparison.json`）
   - 训练路由系统（门控模型与两套专家模型），保存至 `saved_models/`
   - 生成评估可视化，包括混淆矩阵与 ROC AUC 曲线：
     - `reports/model_evaluation.png`
