@@ -146,6 +146,8 @@ ROUTING_EVAL_REPORT_PATH = os.path.join(MODEL_EVAL_FIG_DIR, 'routing_evaluation_
 ROUTING_CONFUSION_MATRIX_PATH = os.path.join(MODEL_EVAL_FIG_DIR, 'routing_confusion_matrix.png')
 ROUTING_ROC_AUC_PATH = os.path.join(MODEL_EVAL_FIG_DIR, 'routing_roc_auc.png')
 AUTOML_RESULTS_PATH = os.path.join(MODEL_EVAL_FIG_DIR, 'automl_comparison.json')
+DETECTED_MALICIOUS_PATHS_REPORT_PATH = os.path.join(MODEL_EVAL_FIG_DIR, 'detected_malicious_paths.txt')
+SCAN_PRINT_ONLY_MALICIOUS = True
 
 # 路由系统训练参数
 # PACKED_SECTIONS_RATIO_THRESHOLD：加壳节比例阈值；用途：判定是否加壳；推荐值：0.4

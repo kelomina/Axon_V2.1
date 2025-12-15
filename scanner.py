@@ -17,7 +17,7 @@ from config.config import (
     SCAN_OUTPUT_DIR, HELP_LIGHTGBM_MODEL_PATH, HELP_FAMILY_CLASSIFIER_PATH, 
     HELP_CACHE_FILE, HELP_FILE_PATH, HELP_DIR_PATH, HELP_RECURSIVE, 
     HELP_OUTPUT_PATH, HELP_MAX_FILE_SIZE, ENV_ALLOWED_SCAN_ROOT, PREDICTION_THRESHOLD,
-    GATING_ENABLED
+    GATING_ENABLED, SCAN_PRINT_ONLY_MALICIOUS
 )
 
 if GATING_ENABLED:
@@ -54,24 +54,31 @@ BASE_DIR = getattr(sys, '_MEIPASS', os.path.abspath('.'))
 
 class MalwareScanner:
     def __init__(self, lightgbm_model_path, family_classifier_path,
-                 max_file_size=DEFAULT_MAX_FILE_SIZE, cache_file=SCAN_CACHE_PATH, enable_cache=True):
+                 max_file_size=DEFAULT_MAX_FILE_SIZE, cache_file=SCAN_CACHE_PATH, enable_cache=True,
+                 print_only_malicious=None):
 
         self.max_file_size = max_file_size
         self.cache_file = cache_file
         self.enable_cache = enable_cache
         self.binary_classifier = None
         self.routing_model = None
+        self.print_only_malicious = SCAN_PRINT_ONLY_MALICIOUS if print_only_malicious is None else bool(print_only_malicious)
+
+        def _debug(msg):
+            if not self.print_only_malicious:
+                print(msg)
+        self._debug = _debug
 
         if GATING_ENABLED:
-            print("[*] Gating System Enabled. Loading Routing Model...")
+            self._debug("[*] Gating System Enabled. Loading Routing Model...")
             try:
                 self.routing_model = RoutingModel()
-                print("[+] Routing Model loaded")
+                self._debug("[+] Routing Model loaded")
             except Exception as e:
-                print(f"[!] Failed to load Routing Model: {e}. Falling back to single LightGBM model.")
+                self._debug(f"[!] Failed to load Routing Model: {e}. Falling back to single LightGBM model.")
 
         if not GATING_ENABLED or self.routing_model is None:
-            print("[*] Loading LightGBM binary classification model...")
+            self._debug("[*] Loading LightGBM binary classification model...")
             model_path = lightgbm_model_path
             if model_path.endswith('.gz'):
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.txt') as tmp:
@@ -80,19 +87,19 @@ class MalwareScanner:
                     model_path = tmp.name
             self.binary_classifier = lgb.Booster(model_file=model_path)
             self._temp_model_path = model_path if model_path != lightgbm_model_path else None
-            print("[+] LightGBM binary classification model loaded")
+            self._debug("[+] LightGBM binary classification model loaded")
 
-        print("[*] Loading family classifier...")
+        self._debug("[*] Loading family classifier...")
         self.family_classifier = FamilyClassifier()
         self.family_classifier.load(family_classifier_path)
 
         self.scan_cache = self._load_cache()
         if self.enable_cache:
-            print(f"[+] Scan cache loaded, total {len(self.scan_cache)} cached files")
+            self._debug(f"[+] Scan cache loaded, total {len(self.scan_cache)} cached files")
         else:
-            print("[+] Scan cache disabled for this scanner instance")
+            self._debug("[+] Scan cache disabled for this scanner instance")
 
-        print("[+] Malware scanner initialization completed")
+        self._debug("[+] Malware scanner initialization completed")
 
     def _load_cache(self):
 
@@ -104,7 +111,7 @@ class MalwareScanner:
                 with open(self.cache_file, 'r', encoding='utf-8') as f:
                     return json.load(f)
             except Exception as e:
-                print(f"[!] Failed to load scan cache: {e}")
+                self._debug(f"[!] Failed to load scan cache: {e}")
                 return {}
         return {}
 
@@ -117,7 +124,7 @@ class MalwareScanner:
             with open(self.cache_file, 'w', encoding='utf-8') as f:
                 json.dump(self.scan_cache, f, indent=2, ensure_ascii=False)
         except Exception as e:
-            print(f"[!] Failed to save scan cache: {e}")
+            self._debug(f"[!] Failed to save scan cache: {e}")
 
     def _calculate_sha256(self, file_path):
 
@@ -132,7 +139,7 @@ class MalwareScanner:
                     sha256_hash.update(chunk)
             return sha256_hash.hexdigest()
         except Exception as e:
-            print(f"[!] Failed to calculate SHA256 for file {file_path}: {e}")
+            self._debug(f"[!] Failed to calculate SHA256 for file {file_path}: {e}")
             return None
 
     def _is_pe_file(self, file_path):
@@ -179,12 +186,12 @@ class MalwareScanner:
 
             features = extract_statistical_features(byte_sequence, pe_features, orig_length)
             try:
-                print(f"[+] 完整特征维度={len(features)}，PE维度={len(pe_features)}，状态={status}")
+                self._debug(f"[+] 完整特征维度={len(features)}，PE维度={len(pe_features)}，状态={status}")
             except Exception:
                 pass
             return features
         except Exception as e:
-            print(f"[!] File preprocessing failed {file_path}: {e}")
+            self._debug(f"[!] File preprocessing failed {file_path}: {e}")
             return None
 
     def _predict_malware_from_features(self, features):
@@ -206,7 +213,7 @@ class MalwareScanner:
 
             return is_malware, confidence
         except Exception as e:
-            print(f"[!] Binary classification prediction failed: {e}")
+            self._debug(f"[!] Binary classification prediction failed: {e}")
             return False, 0.0
 
     def is_malware(self, file_path):
@@ -223,24 +230,29 @@ class MalwareScanner:
 
         valid_path = validate_path(file_path)
         if not valid_path:
-            print(f"[!] Invalid or non-existent file path: {file_path}")
+            self._debug(f"[!] Invalid or non-existent file path: {file_path}")
             return None
 
         file_hash = self._calculate_sha256(valid_path)
         if file_hash is None:
-            print(f"[!] Unable to calculate file hash: {valid_path}")
+            self._debug(f"[!] Unable to calculate file hash: {valid_path}")
             return None
 
         if self.enable_cache and file_hash in self.scan_cache:
             cached_result = self.scan_cache[file_hash]
-            print(f"[*] Using cached result: {valid_path}")
+            self._debug(f"[*] Using cached result: {valid_path}")
+            try:
+                if cached_result.get('is_malware'):
+                    print(valid_path)
+            except Exception:
+                pass
             return cached_result
 
         if not self._is_pe_file(valid_path):
-            print(f"[-] Skipping non-PE file: {valid_path}")
+            self._debug(f"[-] Skipping non-PE file: {valid_path}")
             return None
 
-        print(f"[*] Scanning file: {valid_path}")
+        self._debug(f"[*] Scanning file: {valid_path}")
 
         features = self._preprocess_file(valid_path)
         if features is None:
@@ -267,12 +279,16 @@ class MalwareScanner:
                 }
             })
 
+            try:
+                print(valid_path)
+            except Exception:
+                pass
             if is_new_family:
-                print(f"[+] New malware family discovered: {family_name}")
+                self._debug(f"[+] New malware family discovered: {family_name}")
             else:
-                print(f"[+] Identified as known family: {family_name}")
+                self._debug(f"[+] Identified as known family: {family_name}")
         else:
-            print(f"[+] Identified as benign software")
+            self._debug(f"[+] Identified as benign software")
 
         if self.enable_cache:
             self.scan_cache[file_hash] = result
@@ -290,8 +306,8 @@ class MalwareScanner:
 
         files = [f for f in files if f.is_file()]
 
-        print(f"[*] Scanning directory: {directory_path} ({'recursive' if recursive else 'non-recursive'})")
-        print(f"[*] Found {len(files)} files")
+        self._debug(f"[*] Scanning directory: {directory_path} ({'recursive' if recursive else 'non-recursive'})")
+        self._debug(f"[*] Found {len(files)} files")
 
         for file_path in files:
             try:
@@ -299,7 +315,7 @@ class MalwareScanner:
                 if result is not None:
                     results.append(result)
             except Exception as e:
-                print(f"[!] Failed to process file {file_path}: {e}")
+                self._debug(f"[!] Failed to process file {file_path}: {e}")
 
         return results
 
@@ -308,7 +324,7 @@ class MalwareScanner:
         json_path = output_path + '.json'
         with open(json_path, 'w', encoding='utf-8') as f:
             json.dump(results, f, indent=2, ensure_ascii=False)
-        print(f"[+] Scan results saved to: {json_path}")
+        self._debug(f"[+] Scan results saved to: {json_path}")
 
         csv_path = output_path + '.csv'
         with open(csv_path, 'w', newline='', encoding='utf-8') as f:
@@ -325,7 +341,7 @@ class MalwareScanner:
                         'confidence': result['confidence']
                     }
                     writer.writerow(flat_result)
-        print(f"[+] Scan results saved to: {csv_path}")
+        self._debug(f"[+] Scan results saved to: {csv_path}")
 
     def __del__(self):
 

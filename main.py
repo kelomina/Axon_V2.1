@@ -18,7 +18,8 @@ from config.config import (
     HELP_FAMILY_CLASSIFIER_PATH, HELP_CACHE_FILE, HELP_FILE_PATH, HELP_DIR_PATH,
     HELP_RECURSIVE, HELP_OUTPUT_PATH, HELP_PORT,
     HELP_AUTOML_METHOD, HELP_AUTOML_TRIALS, HELP_AUTOML_CV, HELP_AUTOML_METRIC, HELP_AUTOML_FAST_DEV_RUN,
-    AUTOML_METHOD_DEFAULT, AUTOML_TRIALS_DEFAULT, AUTOML_CV_FOLDS_DEFAULT, AUTOML_METRIC_DEFAULT
+    AUTOML_METHOD_DEFAULT, AUTOML_TRIALS_DEFAULT, AUTOML_CV_FOLDS_DEFAULT, AUTOML_METRIC_DEFAULT,
+    DETECTED_MALICIOUS_PATHS_REPORT_PATH
 )
 from utils.logging_utils import get_logger
 
@@ -137,6 +138,12 @@ def main():
                 logger.error('请指定 --file-path 或 --dir-path')
                 return
             scanner_instance.save_results(results, args.output_path)
+            malicious_paths = [r['file_path'] for r in results if r.get('is_malware')]
+            os.makedirs(os.path.dirname(DETECTED_MALICIOUS_PATHS_REPORT_PATH), exist_ok=True)
+            with open(DETECTED_MALICIOUS_PATHS_REPORT_PATH, 'w', encoding='utf-8') as f:
+                for p in malicious_paths:
+                    f.write(p + '\n')
+            logger.info(f'恶意样本路径已保存: {DETECTED_MALICIOUS_PATHS_REPORT_PATH}，数量: {len(malicious_paths)}')
         except Exception as e:
             logger.error(f'扫描失败: {e}')
             raise

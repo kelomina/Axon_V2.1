@@ -92,6 +92,8 @@
   python main.py scan --file-path E:\\path\\to\\sample.exe
   python main.py scan --dir-path E:\\path\\to\\dump_dir --recursive
   ```
+  - 扫描过程中实时在控制台输出被识别为恶意样本的文件路径
+  - 同时在 `reports/detected_malicious_paths.txt` 保存所有被识别为恶意的文件路径
 
 - 启动扫描服务（FastAPI）
   ```bash
