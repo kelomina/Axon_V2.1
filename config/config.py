@@ -236,7 +236,7 @@ API_CATEGORY_REGISTRY = ['regopenkey','regsetvalue','regcreatekey','regdeletekey
 
 # 路由门控与专家模型配置
 GATING_ENABLED = True
-GATING_MODE = 'mlp'  # 'mlp' or 'transformer'
+GATING_MODE = 'rule'
 GATING_MODEL_PATH = os.path.join(SAVED_MODEL_DIR, 'gating_model.pth')
 # GATING_INPUT_DIM corresponds to the total feature dimension (Statistical + PE features)
 # Statistical features: 49 (based on current logic with STAT_CHUNK_COUNT=10)

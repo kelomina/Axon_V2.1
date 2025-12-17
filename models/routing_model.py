@@ -1,40 +1,29 @@
 import os
-import torch
-import lightgbm as lgb
 import numpy as np
-from models.gating import create_gating_model
+import lightgbm as lgb
+from features.extractor_in_memory import PE_FEATURE_ORDER
 from config.config import (
-    GATING_MODE, GATING_INPUT_DIM, GATING_HIDDEN_DIM, GATING_OUTPUT_DIM, 
-    GATING_THRESHOLD, EXPERT_NORMAL_MODEL_PATH, EXPERT_PACKED_MODEL_PATH,
-    GATING_MODEL_PATH
+    GATING_MODE, GATE_HIGH_ENTROPY_RATIO, GATE_PACKED_SECTIONS_RATIO, GATE_PACKER_RATIO,
+    GATING_THRESHOLD, EXPERT_NORMAL_MODEL_PATH, EXPERT_PACKED_MODEL_PATH, PE_FEATURE_VECTOR_DIM
 )
 
 class RoutingModel:
-    def __init__(self, device='cpu'):
-        self.device = device
-        self.gating_model = None
+    def __init__(self):
         self.expert_normal = None
         self.expert_packed = None
+        self._idx_high_entropy = self._feature_index('high_entropy_ratio')
+        self._idx_packed_sections = self._feature_index('packed_sections_ratio')
+        self._idx_packer_hits = self._feature_index('packer_keyword_hits_ratio')
         self.load_models()
 
     def load_models(self):
-        # Load Gating Model
-        if os.path.exists(GATING_MODEL_PATH):
-            print(f"[*] Loading Gating Model from {GATING_MODEL_PATH}")
-            self.gating_model = create_gating_model(GATING_MODE, GATING_INPUT_DIM, GATING_HIDDEN_DIM, GATING_OUTPUT_DIM)
-            self.gating_model.load_state_dict(torch.load(GATING_MODEL_PATH, map_location=self.device))
-            self.gating_model.to(self.device)
-            self.gating_model.eval()
-        else:
-            print(f"[!] Gating model not found at {GATING_MODEL_PATH}")
-
-        # Load Expert Models
+        if GATING_MODE != 'rule':
+            print(f"[!] GATING_MODE={GATING_MODE} 非 'rule'，将使用规则门控以避免依赖 torch")
         if os.path.exists(EXPERT_NORMAL_MODEL_PATH):
             print(f"[*] Loading Normal Expert from {EXPERT_NORMAL_MODEL_PATH}")
             self.expert_normal = lgb.Booster(model_file=EXPERT_NORMAL_MODEL_PATH)
         else:
             print(f"[!] Normal expert model not found at {EXPERT_NORMAL_MODEL_PATH}")
-
         if os.path.exists(EXPERT_PACKED_MODEL_PATH):
             print(f"[*] Loading Packed Expert from {EXPERT_PACKED_MODEL_PATH}")
             self.expert_packed = lgb.Booster(model_file=EXPERT_PACKED_MODEL_PATH)
@@ -42,52 +31,45 @@ class RoutingModel:
             print(f"[!] Packed expert model not found at {EXPERT_PACKED_MODEL_PATH}")
 
     def predict(self, features):
-        """
-        Predicts using the routing mechanism.
-        features: numpy array of shape (n_samples, n_features)
-        Returns: predictions (n_samples,), routing_decisions (n_samples,)
-        """
-        if self.gating_model is None:
-            raise RuntimeError("Gating model is not loaded.")
-        
-        # Prepare features for Gating Model
-        x_tensor = torch.FloatTensor(features).to(self.device)
-        
-        with torch.no_grad():
-            logits = self.gating_model(x_tensor)
-            probs = torch.softmax(logits, dim=1)
-            # Probability of being 'Packed' (class 1)
-            packed_probs = probs[:, 1].cpu().numpy()
-        
-        # Routing Decision
-        # 1 means Packed (send to Expert Packed), 0 means Normal (send to Expert Normal)
+        x = np.asarray(features)
+        packed_probs = self._rule_gating(x)
         routing_decisions = (packed_probs > GATING_THRESHOLD).astype(int)
-        
-        predictions = np.zeros(len(features))
-        
-        # Indices for each expert
+        predictions = np.zeros(len(x))
         normal_indices = np.where(routing_decisions == 0)[0]
         packed_indices = np.where(routing_decisions == 1)[0]
-        
-        # Inference with Expert Normal
         if len(normal_indices) > 0:
             if self.expert_normal:
-                X_normal = features[normal_indices]
+                X_normal = x[normal_indices]
                 pred_normal = self.expert_normal.predict(X_normal)
                 predictions[normal_indices] = pred_normal
             else:
                 print("[!] Expert Normal not loaded, skipping predictions for normal samples.")
-        
-        # Inference with Expert Packed
         if len(packed_indices) > 0:
             if self.expert_packed:
-                X_packed = features[packed_indices]
+                X_packed = x[packed_indices]
                 pred_packed = self.expert_packed.predict(X_packed)
                 predictions[packed_indices] = pred_packed
             else:
                 print("[!] Expert Packed not loaded, skipping predictions for packed samples.")
-                
         return predictions, routing_decisions
+
+    def _feature_index(self, key):
+        try:
+            return 256 + PE_FEATURE_ORDER.index(key)
+        except ValueError:
+            return None
+
+    def _rule_gating(self, x):
+        start = x.shape[1] - PE_FEATURE_VECTOR_DIM
+        h = self._idx_high_entropy
+        p = self._idx_packed_sections
+        k = self._idx_packer_hits
+        he = x[:, start + h] if h is not None else np.zeros(len(x))
+        ps = x[:, start + p] if p is not None else np.zeros(len(x))
+        kh = x[:, start + k] if k is not None else np.zeros(len(x))
+        score = np.maximum.reduce([he - GATE_HIGH_ENTROPY_RATIO, ps - GATE_PACKED_SECTIONS_RATIO, kh - GATE_PACKER_RATIO])
+        probs = 1.0 / (1.0 + np.exp(-10.0 * score))
+        return probs
 
     def get_routing_stats(self, routing_decisions):
         total = len(routing_decisions)

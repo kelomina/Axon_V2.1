@@ -18,7 +18,7 @@
   - 提升了对加壳样本的检测能力，同时保持对常规样本的高精度。
 
 - 技术栈与核心依赖
-  - Python、NumPy、Pandas、scikit-learn、LightGBM、PyTorch (新增)
+  - Python、NumPy、Pandas、scikit-learn、LightGBM（运行时门控为规则/NumPy，无需 PyTorch）
   - FastAPI + Uvicorn（服务端）
   - fast-hdbscan（多核优化的 HDBSCAN 实现，用于家族聚类，finetune 必备，`finetune.py:21`）
   - pefile（PE 结构读取）、matplotlib / seaborn（可视化）、tqdm（进度条）
@@ -138,7 +138,7 @@
   该脚本会自动：
   1. 加载或提取特征（支持 `--use-existing-features` 和 `--save-features` 参数）。
   2. 根据启发式规则（加壳特征）生成路由标签。
-  3. 训练 Gating Model（PyTorch MLP/Transformer）。
+  3. 应用规则门控（运行时无需 PyTorch，基于高熵/打包器特征）。
   4. 分割数据集并分别训练 Normal Expert 和 Packed Expert (LightGBM)。
   5. 保存所有模型至 `saved_models/` 目录。
 
