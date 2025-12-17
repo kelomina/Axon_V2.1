@@ -55,7 +55,7 @@ BASE_DIR = getattr(sys, '_MEIPASS', os.path.abspath('.'))
 class MalwareScanner:
     def __init__(self, lightgbm_model_path, family_classifier_path,
                  max_file_size=DEFAULT_MAX_FILE_SIZE, cache_file=SCAN_CACHE_PATH, enable_cache=True,
-                 print_only_malicious=None):
+                 print_only_malicious=None, print_malicious_paths=None):
 
         self.max_file_size = max_file_size
         self.cache_file = cache_file
@@ -63,6 +63,7 @@ class MalwareScanner:
         self.binary_classifier = None
         self.routing_model = None
         self.print_only_malicious = SCAN_PRINT_ONLY_MALICIOUS if print_only_malicious is None else bool(print_only_malicious)
+        self.print_malicious_paths = SCAN_PRINT_ONLY_MALICIOUS if print_malicious_paths is None else bool(print_malicious_paths)
 
         def _debug(msg):
             if not self.print_only_malicious:
@@ -242,7 +243,7 @@ class MalwareScanner:
             cached_result = self.scan_cache[file_hash]
             self._debug(f"[*] Using cached result: {valid_path}")
             try:
-                if cached_result.get('is_malware'):
+                if cached_result.get('is_malware') and self.print_malicious_paths:
                     print(valid_path)
             except Exception:
                 pass
@@ -280,7 +281,8 @@ class MalwareScanner:
             })
 
             try:
-                print(valid_path)
+                if self.print_malicious_paths:
+                    print(valid_path)
             except Exception:
                 pass
             if is_new_family:

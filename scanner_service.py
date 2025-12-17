@@ -2,6 +2,7 @@ import os
 import shutil
 import tempfile
 import sys
+import asyncio
 from pathlib import Path
 from threading import Lock
 from typing import Optional, List
@@ -10,7 +11,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from scanner import MalwareScanner
-from config.config import MODEL_PATH, FAMILY_CLASSIFIER_PATH, SCAN_CACHE_PATH, DEFAULT_MAX_FILE_SIZE, DEFAULT_SERVE_PORT, ENV_LIGHTGBM_MODEL_PATH, ENV_FAMILY_CLASSIFIER_PATH, ENV_CACHE_PATH, ENV_MAX_FILE_SIZE, ENV_SERVICE_PORT, ENV_ALLOWED_SCAN_ROOT
+from config.config import MODEL_PATH, FAMILY_CLASSIFIER_PATH, SCAN_CACHE_PATH, DEFAULT_MAX_FILE_SIZE, DEFAULT_SERVE_PORT, ENV_LIGHTGBM_MODEL_PATH, ENV_FAMILY_CLASSIFIER_PATH, ENV_CACHE_PATH, ENV_MAX_FILE_SIZE, ENV_SERVICE_PORT, ENV_ALLOWED_SCAN_ROOT, SERVICE_CONCURRENCY_LIMIT, SERVICE_PRINT_MALICIOUS_PATHS
 
 
 ALLOWED_SCAN_ROOT = os.getenv(ENV_ALLOWED_SCAN_ROOT)
@@ -44,6 +45,7 @@ app = FastAPI(title='KoloVirusDetector Scanner Service', version='1.0.0')
 
 _scanner_lock = Lock()
 _scanner_instance: Optional[MalwareScanner] = None
+_scan_semaphore = asyncio.Semaphore(SERVICE_CONCURRENCY_LIMIT)
 
 
 def _prefer_gz(path: str) -> str:
@@ -69,6 +71,7 @@ def _build_scanner() -> MalwareScanner:
         max_file_size=max_file_size,
         cache_file=None,
         enable_cache=False,
+        print_malicious_paths=SERVICE_PRINT_MALICIOUS_PATHS,
     )
 
 
@@ -95,17 +98,18 @@ def health() -> dict:
 
 
 @app.post('/scan/file')
-def scan_file(request: FileScanRequest) -> dict:
+async def scan_file(request: FileScanRequest) -> dict:
     scanner = get_scanner()
     valid_path = _validate_user_path(request.file_path)
     if not valid_path:
         raise HTTPException(status_code=400, detail='路径不合法或不在允许的扫描目录内')
 
-    with _scanner_lock:
-        result = scanner.scan_file(valid_path)
+    async with _scan_semaphore:
+        result = await asyncio.to_thread(scanner.scan_file, valid_path)
 
     if result is None:
         raise HTTPException(status_code=400, detail='文件不是有效的PE或扫描失败')
+    result['virus_family'] = (result.get('malware_family') or {}).get('family_name')
     return result
 
 
@@ -114,35 +118,39 @@ async def scan_upload(file: UploadFile = File(...)) -> dict:
     scanner = get_scanner()
     suffix = Path(file.filename or '').suffix or '.bin'
 
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
-            shutil.copyfileobj(file.file, tmp_file)
-            temp_path = tmp_file.name
-    finally:
-        file.file.close()
+    def _scan_sync():
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
+                shutil.copyfileobj(file.file, tmp_file)
+                temp_path = tmp_file.name
+        finally:
+            file.file.close()
+        try:
+            result_local = scanner.scan_file(temp_path)
+        finally:
+            os.unlink(temp_path)
+        return result_local
 
-    try:
-        with _scanner_lock:
-            result = scanner.scan_file(temp_path)
-    finally:
-        os.unlink(temp_path)
+    async with _scan_semaphore:
+        result = await asyncio.to_thread(_scan_sync)
 
     if result is None:
         raise HTTPException(status_code=400, detail='文件不是有效的PE或扫描失败')
 
+    result['virus_family'] = (result.get('malware_family') or {}).get('family_name')
     result['original_filename'] = file.filename
     return result
 
 
 @app.post('/cache/save')
-def flush_cache() -> dict:
+async def flush_cache() -> dict:
     scanner = get_scanner()
 
     if not getattr(scanner, 'enable_cache', False):
         return {'status': 'disabled', 'cache_size': 0}
 
-    with _scanner_lock:
-        scanner._save_cache()
+    async with _scan_semaphore:
+        await asyncio.to_thread(scanner._save_cache)
 
     return {'status': 'saved', 'cache_size': len(scanner.scan_cache)}
 
