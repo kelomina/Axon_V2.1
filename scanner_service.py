@@ -2,16 +2,17 @@ import os
 import shutil
 import tempfile
 import sys
+import signal
 import asyncio
 from pathlib import Path
 from threading import Lock
 from typing import Optional, List
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from scanner import MalwareScanner
-from config.config import MODEL_PATH, FAMILY_CLASSIFIER_PATH, SCAN_CACHE_PATH, DEFAULT_MAX_FILE_SIZE, DEFAULT_SERVE_PORT, ENV_LIGHTGBM_MODEL_PATH, ENV_FAMILY_CLASSIFIER_PATH, ENV_CACHE_PATH, ENV_MAX_FILE_SIZE, ENV_SERVICE_PORT, ENV_ALLOWED_SCAN_ROOT, SERVICE_CONCURRENCY_LIMIT, SERVICE_PRINT_MALICIOUS_PATHS
+from config.config import MODEL_PATH, FAMILY_CLASSIFIER_PATH, SCAN_CACHE_PATH, DEFAULT_MAX_FILE_SIZE, DEFAULT_SERVE_PORT, ENV_LIGHTGBM_MODEL_PATH, ENV_FAMILY_CLASSIFIER_PATH, ENV_CACHE_PATH, ENV_MAX_FILE_SIZE, ENV_SERVICE_PORT, ENV_ALLOWED_SCAN_ROOT, SERVICE_CONCURRENCY_LIMIT, SERVICE_PRINT_MALICIOUS_PATHS, SERVICE_EXIT_COMMAND, SERVICE_ADMIN_TOKEN, SERVICE_CONTROL_LOCALHOSTS, ENV_SERVICE_ADMIN_TOKEN, ENV_SERVICE_EXIT_COMMAND
 
 
 ALLOWED_SCAN_ROOT = os.getenv(ENV_ALLOWED_SCAN_ROOT)
@@ -39,6 +40,11 @@ def _env_int(name: str, default: int) -> int:
 
 class FileScanRequest(BaseModel):
     file_path: str = Field(..., description='需要扫描的文件绝对路径')
+
+
+class ControlRequest(BaseModel):
+    command: str = Field(..., description='控制指令')
+    token: Optional[str] = Field(None, description='管理令牌')
 
 
 app = FastAPI(title='KoloVirusDetector Scanner Service', version='1.0.0')
@@ -82,9 +88,66 @@ def get_scanner() -> MalwareScanner:
     return _scanner_instance
 
 
+def _get_exit_command() -> str:
+    return os.getenv(ENV_SERVICE_EXIT_COMMAND, SERVICE_EXIT_COMMAND)
+
+
+def _get_admin_token() -> str:
+    return os.getenv(ENV_SERVICE_ADMIN_TOKEN, SERVICE_ADMIN_TOKEN)
+
+
+def _is_authorized_control(request: Request, token: Optional[str]) -> bool:
+    expected = _get_admin_token()
+    if expected:
+        return token == expected
+
+    client = getattr(request, 'client', None)
+    host = getattr(client, 'host', None) if client else None
+    return host in set(SERVICE_CONTROL_LOCALHOSTS)
+
+
+def _cleanup_environment() -> None:
+    global _scanner_instance
+
+    with _scanner_lock:
+        scanner = _scanner_instance
+        _scanner_instance = None
+
+    if scanner is None:
+        return
+
+    try:
+        if getattr(scanner, 'enable_cache', False):
+            scanner._save_cache()
+    except Exception:
+        pass
+
+    try:
+        if hasattr(scanner, 'scan_cache'):
+            scanner.scan_cache.clear()
+    except Exception:
+        pass
+
+    try:
+        temp_model_path = getattr(scanner, '_temp_model_path', None)
+        if temp_model_path:
+            os.unlink(temp_model_path)
+    except Exception:
+        pass
+
+
+def _trigger_process_exit() -> None:
+    os.kill(os.getpid(), signal.SIGINT)
+
+
 @app.on_event('startup')
 def _startup() -> None:
     get_scanner()
+
+
+@app.on_event('shutdown')
+def _shutdown() -> None:
+    _cleanup_environment()
 
 
 @app.get('/health')
@@ -153,6 +216,20 @@ async def flush_cache() -> dict:
         await asyncio.to_thread(scanner._save_cache)
 
     return {'status': 'saved', 'cache_size': len(scanner.scan_cache)}
+
+
+@app.post('/control/command')
+async def control_command(control: ControlRequest, request: Request, background_tasks: BackgroundTasks) -> dict:
+    if control.command != _get_exit_command():
+        raise HTTPException(status_code=400, detail='未知控制指令')
+
+    if not _is_authorized_control(request, control.token):
+        raise HTTPException(status_code=403, detail='无权限执行控制指令')
+
+    background_tasks.add_task(_cleanup_environment)
+    background_tasks.add_task(_trigger_process_exit)
+
+    return {'status': 'shutting_down'}
 
 
 if __name__ == '__main__':

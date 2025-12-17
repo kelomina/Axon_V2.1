@@ -112,15 +112,22 @@
   - `POST /scan/file`：`{"file_path": "C:\\sample.exe"}`
   - `POST /scan/upload`：上传文件进行扫描（multipart/form-data）
   - `GET /health`：服务健康检查
+  - `POST /control/command`：`{"command": "exit", "token": "..."}`
   - 示例
   ```bash
   curl -X POST "http://127.0.0.1:8000/scan/file" -H "Content-Type: application/json" -d '{"file_path":"C:\\Windows\\System32\\notepad.exe"}'
   ```
+  ```bash
+  curl -X POST "http://127.0.0.1:8000/control/command" -H "Content-Type: application/json" -d '{"command":"exit"}'
+  ```
+  - 说明
+    - 默认仅允许本机（127.0.0.1 / ::1）调用退出指令
+    - 配置 `SCANNER_SERVICE_ADMIN_TOKEN` 后，远程调用需在请求体携带相同 `token`
   - 响应字段
     - 新增 `virus_family`：若识别为恶意样本则为家族名称，否则为 `null`
   - 并发与响应
     - 服务端对上传扫描采用线程池执行，避免阻塞事件循环
-    - 并发限制由 `config.SERVICE_CONCURRENCY_LIMIT` 控制（默认 8）
+    - 并发限制由 `config.SERVICE_CONCURRENCY_LIMIT` 控制（默认 256）
     - 服务端默认不在终端打印恶意样本路径，可通过 `config.SERVICE_PRINT_MALICIOUS_PATHS` 开启或关闭
 
 ## 路由门控系统训练
@@ -192,6 +199,7 @@
 - 环境变量覆盖（服务与扫描）
   - `SCANNER_LIGHTGBM_MODEL_PATH`、`SCANNER_FAMILY_CLASSIFIER_PATH`（`config/config.py:142-151`）
   - `SCANNER_CACHE_PATH`、`SCANNER_MAX_FILE_SIZE`、`SCANNER_SERVICE_PORT`、`SCANNER_ALLOWED_SCAN_ROOT`（`config/config.py:146-153`）
+  - `SCANNER_SERVICE_ADMIN_TOKEN`、`SCANNER_SERVICE_EXIT_COMMAND`（`config/config.py`）
   - 服务端并发与打印行为：`SERVICE_CONCURRENCY_LIMIT`、`SERVICE_PRINT_MALICIOUS_PATHS`（`config/config.py:150-151`）
 
 ## 开发指南
