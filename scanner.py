@@ -217,6 +217,107 @@ class MalwareScanner:
             self._debug(f"[!] Binary classification prediction failed: {e}")
             return False, 0.0
 
+    def _predict_malware_batch(self, features_matrix):
+        try:
+            if self.routing_model is not None:
+                predictions, decisions = self.routing_model.predict(features_matrix)
+            elif self.binary_classifier is not None:
+                predictions = self.binary_classifier.predict(features_matrix)
+            else:
+                raise Exception("No model loaded for prediction")
+            
+            is_malware_batch = predictions > PREDICTION_THRESHOLD
+            confidence_batch = np.where(is_malware_batch, predictions, 1 - predictions)
+            
+            return is_malware_batch, confidence_batch
+        except Exception as e:
+            self._debug(f"[!] Batch prediction failed: {e}")
+            count = len(features_matrix)
+            return [False] * count, [0.0] * count
+
+    def scan_batch(self, file_paths):
+        final_results = [None] * len(file_paths)
+        
+        batch_indices = []
+        batch_features = []
+        batch_paths = []
+        batch_hashes = []
+        
+        for i, file_path in enumerate(file_paths):
+            valid_path = validate_path(file_path)
+            if not valid_path:
+                self._debug(f"[!] Invalid path: {file_path}")
+                continue
+            
+            file_hash = self._calculate_sha256(valid_path)
+            if not file_hash:
+                continue
+            
+            if self.enable_cache and file_hash in self.scan_cache:
+                cached_result = self.scan_cache[file_hash]
+                self._debug(f"[*] Using cached result: {valid_path}")
+                try:
+                    if cached_result.get('is_malware') and self.print_malicious_paths:
+                        print(valid_path)
+                except Exception:
+                    pass
+                final_results[i] = cached_result
+                continue
+            
+            if not self._is_pe_file(valid_path):
+                self._debug(f"[-] Skipping non-PE file: {valid_path}")
+                continue
+                
+            features = self._preprocess_file(valid_path)
+            if features is None:
+                continue
+                
+            batch_indices.append(i)
+            batch_features.append(features)
+            batch_paths.append(valid_path)
+            batch_hashes.append(file_hash)
+            
+        if batch_features:
+            matrix = np.array(batch_features)
+            is_malware_list, confidence_list = self._predict_malware_batch(matrix)
+            
+            for idx, is_malware, confidence, path, fhash, feat in zip(batch_indices, is_malware_list, confidence_list, batch_paths, batch_hashes, batch_features):
+                result = {
+                    'file_path': path,
+                    'file_name': os.path.basename(path),
+                    'file_size': os.path.getsize(path),
+                    'is_malware': bool(is_malware),
+                    'confidence': float(confidence),
+                }
+                
+                if is_malware:
+                    cluster_id, family_name, is_new_family = self.predict_family(feat)
+                    result.update({
+                        'malware_family': {
+                            'cluster_id': int(cluster_id) if cluster_id is not None else -1,
+                            'family_name': family_name,
+                            'is_new_family': bool(is_new_family)
+                        }
+                    })
+                    try:
+                        if self.print_malicious_paths:
+                            print(path)
+                    except Exception:
+                        pass
+                    if is_new_family:
+                        self._debug(f"[+] New malware family discovered: {family_name}")
+                    else:
+                        self._debug(f"[+] Identified as known family: {family_name}")
+                else:
+                    self._debug(f"[+] Identified as benign software: {path}")
+                    
+                if self.enable_cache:
+                    self.scan_cache[fhash] = result
+                    
+                final_results[idx] = result
+                
+        return [r for r in final_results if r is not None]
+
     def is_malware(self, file_path):
         features = self._preprocess_file(file_path)
         if features is None:
@@ -306,18 +407,19 @@ class MalwareScanner:
         else:
             files = Path(directory_path).glob('*')
 
-        files = [f for f in files if f.is_file()]
+        file_paths = [str(f) for f in files if f.is_file()]
 
         self._debug(f"[*] Scanning directory: {directory_path} ({'recursive' if recursive else 'non-recursive'})")
-        self._debug(f"[*] Found {len(files)} files")
+        self._debug(f"[*] Found {len(file_paths)} files")
 
-        for file_path in files:
+        CHUNK_SIZE = 128
+        for i in range(0, len(file_paths), CHUNK_SIZE):
+            chunk = file_paths[i:i + CHUNK_SIZE]
             try:
-                result = self.scan_file(str(file_path))
-                if result is not None:
-                    results.append(result)
+                batch_results = self.scan_batch(chunk)
+                results.extend(batch_results)
             except Exception as e:
-                self._debug(f"[!] Failed to process file {file_path}: {e}")
+                self._debug(f"[!] Batch processing failed for chunk {i}: {e}")
 
         return results
 

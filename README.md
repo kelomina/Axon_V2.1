@@ -110,6 +110,9 @@
 
 - HTTP 接口
   - `POST /scan/file`：`{"file_path": "C:\\sample.exe"}`
+  - `POST /scan/batch`：批量扫描 `{"file_paths": ["C:\\sample1.exe", "C:\\sample2.exe"]}`
+    - 支持矩阵并行计算，通过一次性推理多个样本显著提升吞吐量。
+    - 批量大小受 `config.SERVICE_MAX_BATCH_SIZE` 限制（默认 128）。
   - `POST /scan/upload`：上传文件进行扫描（multipart/form-data）
   - `GET /health`：服务健康检查
   - `POST /control/command`：`{"command": "exit", "token": "..."}`
@@ -258,6 +261,7 @@
   - 非 PE 文件会被跳过（属预期行为）`scanner.py:211-213`
   - 特征维度不一致会自动填充/截断并记录汇总（数据/增量/扫描路径均有统计文件输出）`training/data_loader.py:61-73,99-113`
   - 训练与评估统一使用带列名的特征 DataFrame，列名规范为 `feature_{i}` 且顺序一致，避免出现 sklearn 提示 “X does not have valid feature names”，相关处理见 `training/automl.py:25-36,54-60`
+  - 扫描完成后立即释放 PE 解析句柄与上传临时文件，避免 Windows 上文件锁定问题（`features/extractor_in_memory.py:117-684`、`scanner_service.py:179-205`）
 
 - 故障排查指南
   - 确认依赖与 Python 版本；运行 `pip list` 检查 `fast-hdbscan`、`lightgbm`

@@ -118,6 +118,7 @@ def extract_enhanced_pe_features(file_path):
     features = {}
     missing_flags = {}
     file_size = 0
+    pe = None
     try:
         valid_path = validate_path(file_path)
         if not valid_path:
@@ -681,10 +682,17 @@ def extract_enhanced_pe_features(file_path):
         ]
         for key in default_keys:
             features[key] = 0
+    finally:
+        if pe is not None:
+            try:
+                pe.close()
+            except Exception:
+                pass
     return features
 
 def extract_lightweight_pe_features(file_path):
     feature_vector = np.zeros(256, dtype=np.float32)
+    pe = None
     try:
         valid_path = validate_path(file_path)
         if not valid_path:
@@ -710,8 +718,18 @@ def extract_lightweight_pe_features(file_path):
         norm = np.linalg.norm(feature_vector)
         if norm > 0 and not np.isnan(norm):
             feature_vector /= norm
+        if pe is not None:
+            try:
+                pe.close()
+            except Exception:
+                pass
         return feature_vector
     except Exception:
+        if pe is not None:
+            try:
+                pe.close()
+            except Exception:
+                pass
         return feature_vector
 
 PE_FEATURE_ORDER = [

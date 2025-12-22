@@ -12,7 +12,7 @@ from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, Uplo
 from pydantic import BaseModel, Field
 
 from scanner import MalwareScanner
-from config.config import MODEL_PATH, FAMILY_CLASSIFIER_PATH, SCAN_CACHE_PATH, DEFAULT_MAX_FILE_SIZE, DEFAULT_SERVE_PORT, ENV_LIGHTGBM_MODEL_PATH, ENV_FAMILY_CLASSIFIER_PATH, ENV_CACHE_PATH, ENV_MAX_FILE_SIZE, ENV_SERVICE_PORT, ENV_ALLOWED_SCAN_ROOT, SERVICE_CONCURRENCY_LIMIT, SERVICE_PRINT_MALICIOUS_PATHS, SERVICE_EXIT_COMMAND, SERVICE_ADMIN_TOKEN, SERVICE_CONTROL_LOCALHOSTS, ENV_SERVICE_ADMIN_TOKEN, ENV_SERVICE_EXIT_COMMAND
+from config.config import MODEL_PATH, FAMILY_CLASSIFIER_PATH, SCAN_CACHE_PATH, DEFAULT_MAX_FILE_SIZE, DEFAULT_SERVE_PORT, ENV_LIGHTGBM_MODEL_PATH, ENV_FAMILY_CLASSIFIER_PATH, ENV_CACHE_PATH, ENV_MAX_FILE_SIZE, ENV_SERVICE_PORT, ENV_ALLOWED_SCAN_ROOT, SERVICE_CONCURRENCY_LIMIT, SERVICE_PRINT_MALICIOUS_PATHS, SERVICE_EXIT_COMMAND, SERVICE_ADMIN_TOKEN, SERVICE_CONTROL_LOCALHOSTS, ENV_SERVICE_ADMIN_TOKEN, ENV_SERVICE_EXIT_COMMAND, SERVICE_MAX_BATCH_SIZE
 
 
 ALLOWED_SCAN_ROOT = os.getenv(ENV_ALLOWED_SCAN_ROOT)
@@ -40,6 +40,10 @@ def _env_int(name: str, default: int) -> int:
 
 class FileScanRequest(BaseModel):
     file_path: str = Field(..., description='需要扫描的文件绝对路径')
+
+
+class FileBatchRequest(BaseModel):
+    file_paths: List[str] = Field(..., description='需要扫描的文件路径列表')
 
 
 class ControlRequest(BaseModel):
@@ -174,6 +178,37 @@ async def scan_file(request: FileScanRequest) -> dict:
         raise HTTPException(status_code=400, detail='文件不是有效的PE或扫描失败')
     result['virus_family'] = (result.get('malware_family') or {}).get('family_name')
     return result
+
+
+@app.post('/scan/batch')
+async def scan_batch(request: FileBatchRequest) -> List[dict]:
+    scanner = get_scanner()
+    
+    if len(request.file_paths) > SERVICE_MAX_BATCH_SIZE:
+        raise HTTPException(status_code=400, detail=f'批量扫描数量超过限制: {SERVICE_MAX_BATCH_SIZE}')
+    
+    # Pre-validate to save time on obviously wrong requests? 
+    # Or just let scanner handle it. 
+    # Let's validate here to ensure we only pass valid paths to scanner if possible, 
+    # but scanner does validation too.
+    # However, to respect ALLOWED_SCAN_ROOT from service env, we should check.
+    
+    valid_paths = []
+    for p in request.file_paths:
+        vp = _validate_user_path(p)
+        if vp:
+            valid_paths.append(vp)
+            
+    if not valid_paths:
+        return []
+
+    async with _scan_semaphore:
+        results = await asyncio.to_thread(scanner.scan_batch, valid_paths)
+        
+    for res in results:
+        res['virus_family'] = (res.get('malware_family') or {}).get('family_name')
+        
+    return results
 
 
 @app.post('/scan/upload')
