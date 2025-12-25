@@ -4,7 +4,8 @@ import lightgbm as lgb
 from features.extractor_in_memory import PE_FEATURE_ORDER
 from config.config import (
     GATING_MODE, GATE_HIGH_ENTROPY_RATIO, GATE_PACKED_SECTIONS_RATIO, GATE_PACKER_RATIO,
-    GATING_THRESHOLD, EXPERT_NORMAL_MODEL_PATH, EXPERT_PACKED_MODEL_PATH, PE_FEATURE_VECTOR_DIM
+    GATING_THRESHOLD, EXPERT_NORMAL_MODEL_PATH, EXPERT_PACKED_MODEL_PATH, PE_FEATURE_VECTOR_DIM,
+    LIGHTGBM_PREDICT_NUM_THREADS
 )
 
 class RoutingModel:
@@ -22,11 +23,19 @@ class RoutingModel:
         if os.path.exists(EXPERT_NORMAL_MODEL_PATH):
             print(f"[*] Loading Normal Expert from {EXPERT_NORMAL_MODEL_PATH}")
             self.expert_normal = lgb.Booster(model_file=EXPERT_NORMAL_MODEL_PATH)
+            try:
+                self.expert_normal.reset_parameter({'num_threads': LIGHTGBM_PREDICT_NUM_THREADS})
+            except Exception:
+                pass
         else:
             print(f"[!] Normal expert model not found at {EXPERT_NORMAL_MODEL_PATH}")
         if os.path.exists(EXPERT_PACKED_MODEL_PATH):
             print(f"[*] Loading Packed Expert from {EXPERT_PACKED_MODEL_PATH}")
             self.expert_packed = lgb.Booster(model_file=EXPERT_PACKED_MODEL_PATH)
+            try:
+                self.expert_packed.reset_parameter({'num_threads': LIGHTGBM_PREDICT_NUM_THREADS})
+            except Exception:
+                pass
         else:
             print(f"[!] Packed expert model not found at {EXPERT_PACKED_MODEL_PATH}")
 
@@ -40,14 +49,14 @@ class RoutingModel:
         if len(normal_indices) > 0:
             if self.expert_normal:
                 X_normal = x[normal_indices]
-                pred_normal = self.expert_normal.predict(X_normal)
+                pred_normal = self.expert_normal.predict(X_normal, num_threads=LIGHTGBM_PREDICT_NUM_THREADS)
                 predictions[normal_indices] = pred_normal
             else:
                 print("[!] Expert Normal not loaded, skipping predictions for normal samples.")
         if len(packed_indices) > 0:
             if self.expert_packed:
                 X_packed = x[packed_indices]
-                pred_packed = self.expert_packed.predict(X_packed)
+                pred_packed = self.expert_packed.predict(X_packed, num_threads=LIGHTGBM_PREDICT_NUM_THREADS)
                 predictions[packed_indices] = pred_packed
             else:
                 print("[!] Expert Packed not loaded, skipping predictions for packed samples.")

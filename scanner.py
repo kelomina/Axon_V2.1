@@ -17,7 +17,7 @@ from config.config import (
     SCAN_OUTPUT_DIR, HELP_LIGHTGBM_MODEL_PATH, HELP_FAMILY_CLASSIFIER_PATH, 
     HELP_CACHE_FILE, HELP_FILE_PATH, HELP_DIR_PATH, HELP_RECURSIVE, 
     HELP_OUTPUT_PATH, HELP_MAX_FILE_SIZE, ENV_ALLOWED_SCAN_ROOT, PREDICTION_THRESHOLD,
-    GATING_ENABLED, SCAN_PRINT_ONLY_MALICIOUS
+    GATING_ENABLED, SCAN_PRINT_ONLY_MALICIOUS, LIGHTGBM_PREDICT_NUM_THREADS
 )
 
 if GATING_ENABLED:
@@ -87,6 +87,10 @@ class MalwareScanner:
                         shutil.copyfileobj(gf, tmp)
                     model_path = tmp.name
             self.binary_classifier = lgb.Booster(model_file=model_path)
+            try:
+                self.binary_classifier.reset_parameter({'num_threads': LIGHTGBM_PREDICT_NUM_THREADS})
+            except Exception:
+                pass
             self._temp_model_path = model_path if model_path != lightgbm_model_path else None
             self._debug("[+] LightGBM binary classification model loaded")
 
@@ -202,10 +206,8 @@ class MalwareScanner:
             if self.routing_model is not None:
                 predictions, decisions = self.routing_model.predict(feature_vector)
                 prediction_val = predictions[0]
-                # Log routing decision if needed (e.g. for debug)
-                # decision = "Packed" if decisions[0] == 1 else "Normal"
             elif self.binary_classifier is not None:
-                prediction_val = self.binary_classifier.predict(feature_vector)[0]
+                prediction_val = self.binary_classifier.predict(feature_vector, num_threads=LIGHTGBM_PREDICT_NUM_THREADS)[0]
             else:
                 raise Exception("No model loaded for prediction")
 
@@ -222,7 +224,7 @@ class MalwareScanner:
             if self.routing_model is not None:
                 predictions, decisions = self.routing_model.predict(features_matrix)
             elif self.binary_classifier is not None:
-                predictions = self.binary_classifier.predict(features_matrix)
+                predictions = self.binary_classifier.predict(features_matrix, num_threads=LIGHTGBM_PREDICT_NUM_THREADS)
             else:
                 raise Exception("No model loaded for prediction")
             
