@@ -1,19 +1,18 @@
 import os
 import shutil
 import tempfile
+import sys
 import signal
 import asyncio
-import concurrent.futures
 from pathlib import Path
 from threading import Lock
-from typing import Optional, List, Callable, Any
+from typing import Optional, List
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
-import numpy as np
 
 from scanner import MalwareScanner
-from config.config import MODEL_PATH, FAMILY_CLASSIFIER_PATH, SCAN_CACHE_PATH, DEFAULT_MAX_FILE_SIZE, DEFAULT_SERVE_PORT, ENV_LIGHTGBM_MODEL_PATH, ENV_FAMILY_CLASSIFIER_PATH, ENV_CACHE_PATH, ENV_MAX_FILE_SIZE, ENV_SERVICE_PORT, ENV_ALLOWED_SCAN_ROOT, SERVICE_CONCURRENCY_LIMIT, SERVICE_PRINT_MALICIOUS_PATHS, SERVICE_EXIT_COMMAND, SERVICE_ADMIN_TOKEN, SERVICE_CONTROL_LOCALHOSTS, ENV_SERVICE_ADMIN_TOKEN, ENV_SERVICE_EXIT_COMMAND, SERVICE_MAX_BATCH_SIZE, ENV_SERVICE_FEATURE_PROCESS_WORKERS, ENV_SERVICE_FEATURE_PROCESS_POOL_ENABLED, SERVICE_FEATURE_PROCESS_WORKERS, SERVICE_FEATURE_PROCESS_POOL_ENABLED, SERVICE_IO_THREAD_WORKERS
+from config.config import MODEL_PATH, FAMILY_CLASSIFIER_PATH, SCAN_CACHE_PATH, DEFAULT_MAX_FILE_SIZE, DEFAULT_SERVE_PORT, ENV_LIGHTGBM_MODEL_PATH, ENV_FAMILY_CLASSIFIER_PATH, ENV_CACHE_PATH, ENV_MAX_FILE_SIZE, ENV_SERVICE_PORT, ENV_ALLOWED_SCAN_ROOT, SERVICE_CONCURRENCY_LIMIT, SERVICE_PRINT_MALICIOUS_PATHS, SERVICE_EXIT_COMMAND, SERVICE_ADMIN_TOKEN, SERVICE_CONTROL_LOCALHOSTS, ENV_SERVICE_ADMIN_TOKEN, ENV_SERVICE_EXIT_COMMAND, SERVICE_MAX_BATCH_SIZE
 
 
 ALLOWED_SCAN_ROOT = os.getenv(ENV_ALLOWED_SCAN_ROOT)
@@ -57,87 +56,6 @@ app = FastAPI(title='KoloVirusDetector Scanner Service', version='1.0.0')
 _scanner_lock = Lock()
 _scanner_instance: Optional[MalwareScanner] = None
 _scan_semaphore = asyncio.Semaphore(SERVICE_CONCURRENCY_LIMIT)
-_io_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
-_feature_executor: Optional[concurrent.futures.ProcessPoolExecutor] = None
-
-
-def _env_bool(name: str, default: bool) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    value = value.strip().lower()
-    return value in {'1', 'true', 'yes', 'y', 'on'}
-
-
-def _extract_features_worker(file_path: str, max_file_size: int):
-    try:
-        import numpy as _np
-        from config.config import PE_FEATURE_VECTOR_DIM
-        from features.extractor_in_memory import extract_features_in_memory
-        from features.statistics import extract_statistical_features
-
-        byte_sequence, pe_features, orig_length = extract_features_in_memory(file_path, max_file_size)
-        if byte_sequence is None or pe_features is None:
-            return None
-
-        orig_pe_len = len(pe_features)
-        if orig_pe_len != PE_FEATURE_VECTOR_DIM:
-            fixed_pe_features = _np.zeros(PE_FEATURE_VECTOR_DIM, dtype=_np.float32)
-            copy_len = min(orig_pe_len, PE_FEATURE_VECTOR_DIM)
-            fixed_pe_features[:copy_len] = pe_features[:copy_len]
-            pe_features = fixed_pe_features
-
-        features = extract_statistical_features(byte_sequence, pe_features, orig_length)
-        return features
-    except Exception:
-        return None
-
-
-async def _run_in_io(func: Callable[..., Any], *args: Any) -> Any:
-    loop = asyncio.get_running_loop()
-    if _io_executor is not None:
-        return await loop.run_in_executor(_io_executor, func, *args)
-    return await asyncio.to_thread(func, *args)
-
-
-async def _extract_features_async(file_path: str) -> Optional[np.ndarray]:
-    max_file_size = _env_int(ENV_MAX_FILE_SIZE, DEFAULT_MAX_FILE_SIZE)
-    loop = asyncio.get_running_loop()
-    if _feature_executor is not None:
-        return await loop.run_in_executor(_feature_executor, _extract_features_worker, file_path, max_file_size)
-    if _io_executor is not None:
-        return await loop.run_in_executor(_io_executor, _extract_features_worker, file_path, max_file_size)
-    return await asyncio.to_thread(_extract_features_worker, file_path, max_file_size)
-
-
-def _build_result(scanner: MalwareScanner, file_path: str, features: np.ndarray, is_malware: bool, confidence: float) -> dict:
-    result = {
-        'file_path': file_path,
-        'file_name': os.path.basename(file_path),
-        'file_size': os.path.getsize(file_path),
-        'is_malware': bool(is_malware),
-        'confidence': float(confidence),
-    }
-
-    if is_malware:
-        cluster_id, family_name, is_new_family = scanner.predict_family(features)
-        result['malware_family'] = {
-            'cluster_id': int(cluster_id) if cluster_id is not None else -1,
-            'family_name': family_name,
-            'is_new_family': bool(is_new_family),
-        }
-
-    result['virus_family'] = (result.get('malware_family') or {}).get('family_name')
-    return result
-
-
-async def _scan_one_path(scanner: MalwareScanner, file_path: str) -> Optional[dict]:
-    features = await _extract_features_async(file_path)
-    if features is None:
-        return None
-
-    is_malware, confidence = scanner._predict_malware_from_features(features)
-    return _build_result(scanner, file_path, features, is_malware, confidence)
 
 
 def _prefer_gz(path: str) -> str:
@@ -229,35 +147,10 @@ def _trigger_process_exit() -> None:
 @app.on_event('startup')
 def _startup() -> None:
     get_scanner()
-    global _io_executor, _feature_executor
-    _io_executor = concurrent.futures.ThreadPoolExecutor(max_workers=SERVICE_IO_THREAD_WORKERS)
-    enabled = _env_bool(ENV_SERVICE_FEATURE_PROCESS_POOL_ENABLED, SERVICE_FEATURE_PROCESS_POOL_ENABLED)
-    workers = _env_int(ENV_SERVICE_FEATURE_PROCESS_WORKERS, SERVICE_FEATURE_PROCESS_WORKERS)
-    if enabled and workers > 0:
-        _feature_executor = concurrent.futures.ProcessPoolExecutor(max_workers=workers)
 
 
 @app.on_event('shutdown')
 def _shutdown() -> None:
-    global _io_executor, _feature_executor
-    if _feature_executor is not None:
-        try:
-            _feature_executor.shutdown(wait=False, cancel_futures=True)
-        except Exception:
-            try:
-                _feature_executor.shutdown(wait=False)
-            except Exception:
-                pass
-        _feature_executor = None
-    if _io_executor is not None:
-        try:
-            _io_executor.shutdown(wait=False, cancel_futures=True)
-        except Exception:
-            try:
-                _io_executor.shutdown(wait=False)
-            except Exception:
-                pass
-        _io_executor = None
     _cleanup_environment()
 
 
@@ -279,10 +172,11 @@ async def scan_file(request: FileScanRequest) -> dict:
         raise HTTPException(status_code=400, detail='路径不合法或不在允许的扫描目录内')
 
     async with _scan_semaphore:
-        result = await _scan_one_path(scanner, valid_path)
+        result = await asyncio.to_thread(scanner.scan_file, valid_path)
 
     if result is None:
         raise HTTPException(status_code=400, detail='文件不是有效的PE或扫描失败')
+    result['virus_family'] = (result.get('malware_family') or {}).get('family_name')
     return result
 
 
@@ -309,36 +203,11 @@ async def scan_batch(request: FileBatchRequest) -> List[dict]:
         return []
 
     async with _scan_semaphore:
-        tasks = []
-        scan_paths = []
-        for p in valid_paths:
-            scan_paths.append(p)
-            tasks.append(_extract_features_async(p))
-
-        if not tasks:
-            return []
-
-        features_list = await asyncio.gather(*tasks)
-
-        final_paths = []
-        final_features = []
-        for p, feat in zip(scan_paths, features_list):
-            if feat is None:
-                continue
-            final_paths.append(p)
-            final_features.append(feat)
-
-        if not final_features:
-            return []
-
-        matrix = np.array(final_features)
-        is_malware_list, confidence_list = scanner._predict_malware_batch(matrix)
-
-        results: List[dict] = []
-        for p, feat, is_malware, confidence in zip(final_paths, final_features, is_malware_list, confidence_list):
-            res = _build_result(scanner, p, feat, bool(is_malware), float(confidence))
-            results.append(res)
-
+        results = await asyncio.to_thread(scanner.scan_batch, valid_paths)
+        
+    for res in results:
+        res['virus_family'] = (res.get('malware_family') or {}).get('family_name')
+        
     return results
 
 
@@ -347,32 +216,26 @@ async def scan_upload(file: UploadFile = File(...)) -> dict:
     scanner = get_scanner()
     suffix = Path(file.filename or '').suffix or '.bin'
 
+    def _scan_sync():
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
+                shutil.copyfileobj(file.file, tmp_file)
+                temp_path = tmp_file.name
+        finally:
+            file.file.close()
+        try:
+            result_local = scanner.scan_file(temp_path)
+        finally:
+            os.unlink(temp_path)
+        return result_local
+
     async with _scan_semaphore:
-        try:
-            def _save_temp() -> str:
-                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
-                    shutil.copyfileobj(file.file, tmp_file)
-                    return tmp_file.name
-
-            temp_path = await _run_in_io(_save_temp)
-        finally:
-            try:
-                file.file.close()
-            except Exception:
-                pass
-
-        try:
-            result = await _scan_one_path(scanner, temp_path)
-        finally:
-            try:
-                if os.path.exists(temp_path):
-                    os.unlink(temp_path)
-            except Exception:
-                pass
+        result = await asyncio.to_thread(_scan_sync)
 
     if result is None:
         raise HTTPException(status_code=400, detail='文件不是有效的PE或扫描失败')
 
+    result['virus_family'] = (result.get('malware_family') or {}).get('family_name')
     result['original_filename'] = file.filename
     return result
 

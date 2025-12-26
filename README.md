@@ -202,10 +202,8 @@
 - 环境变量覆盖（服务与扫描）
   - `SCANNER_LIGHTGBM_MODEL_PATH`、`SCANNER_FAMILY_CLASSIFIER_PATH`（`config/config.py:142-151`）
   - `SCANNER_CACHE_PATH`、`SCANNER_MAX_FILE_SIZE`、`SCANNER_SERVICE_PORT`、`SCANNER_ALLOWED_SCAN_ROOT`（`config/config.py:146-153`）
-  - `SCANNER_LIGHTGBM_PREDICT_NUM_THREADS`（`config/config.py`）
   - `SCANNER_SERVICE_ADMIN_TOKEN`、`SCANNER_SERVICE_EXIT_COMMAND`（`config/config.py`）
   - 服务端并发与打印行为：`SERVICE_CONCURRENCY_LIMIT`、`SERVICE_PRINT_MALICIOUS_PATHS`（`config/config.py:150-151`）
-  - 服务端混合并发：`SCANNER_SERVICE_FEATURE_POOL_ENABLED`、`SCANNER_SERVICE_FEATURE_WORKERS`、`SCANNER_SERVICE_IO_THREAD_WORKERS`（`config/config.py`）
 
 ## 开发指南
 
@@ -252,7 +250,6 @@
 
 - 性能优化建议
 - 训练阶段：调整 `LIGHTGBM_NUM_THREADS_MAX`、`num_leaves`、`learning_rate`、`DEFAULT_EARLY_STOPPING_ROUNDS`（默认 200）。当前默认：`num_leaves=281`、`learning_rate=0.0054273608259950085`（`config/config.py`，`training/train_lightgbm.py`）
-  - 推理阶段（Windows 建议单进程）：配置 `LIGHTGBM_PREDICT_NUM_THREADS` 启用单进程多线程推理；服务端用 `SERVICE_CONCURRENCY_LIMIT` 门控请求并发，必要时启用特征提取进程池（`SCANNER_SERVICE_FEATURE_POOL_ENABLED`、`SCANNER_SERVICE_FEATURE_WORKERS`）将特征提取并行化，但推理仍集中在主进程以避免模型内存复制
   - 推理阶段：合理设置 `DEFAULT_MAX_FILE_SIZE`，使用缓存文件 `scan_cache.json`
   - 可视化与聚类：降维到 `PCA_DIMENSION_FOR_CLUSTERING`，控制采样量 `VIS_SAMPLE_SIZE`
 
