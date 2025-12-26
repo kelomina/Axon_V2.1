@@ -1,18 +1,14 @@
 # Generated on 2025-12-03 for project KoloVirusDetector_ML_V2-main
 fast-hdbscan
-fastapi
 lightgbm
 matplotlib
 numpy
 pandas
 pefile
-pydantic
-python-multipart
 scikit-learn
 seaborn
 torch
 tqdm
-uvicorn
 argparse
 optuna
 hyperopt

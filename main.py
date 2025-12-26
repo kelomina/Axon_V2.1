@@ -1,12 +1,13 @@
 import os
 import argparse
+import asyncio
 from config.config import (
     MODEL_PATH, FAMILY_CLASSIFIER_PATH, FEATURES_PKL_PATH, PROCESSED_DATA_DIR, METADATA_FILE,
     BENIGN_SAMPLES_DIR, MALICIOUS_SAMPLES_DIR,
     DEFAULT_MAX_FILE_SIZE, DEFAULT_NUM_BOOST_ROUND, DEFAULT_INCREMENTAL_ROUNDS,
     DEFAULT_INCREMENTAL_EARLY_STOPPING, DEFAULT_MAX_FINETUNE_ITERATIONS,
     DEFAULT_MIN_CLUSTER_SIZE, DEFAULT_MIN_SAMPLES, DEFAULT_MIN_FAMILY_SIZE,
-    DEFAULT_SERVE_PORT, SCAN_CACHE_PATH, SCAN_OUTPUT_DIR, HDBSCAN_SAVE_DIR,
+    SCAN_CACHE_PATH, SCAN_OUTPUT_DIR, HDBSCAN_SAVE_DIR,
     HELP_MAX_FILE_SIZE, HELP_FAST_DEV_RUN, HELP_SAVE_FEATURES,
     HELP_FINETUNE_ON_FALSE_POSITIVES, HELP_INCREMENTAL_TRAINING,
     HELP_INCREMENTAL_DATA_DIR, HELP_INCREMENTAL_RAW_DATA_DIR, HELP_FILE_EXTENSIONS,
@@ -16,12 +17,17 @@ from config.config import (
     HELP_MIN_CLUSTER_SIZE, HELP_MIN_SAMPLES, HELP_MIN_FAMILY_SIZE, HELP_PLOT_PCA,
     HELP_EXPLAIN_DISCREPANCY, HELP_TREAT_NOISE_AS_FAMILY, HELP_LIGHTGBM_MODEL_PATH,
     HELP_FAMILY_CLASSIFIER_PATH, HELP_CACHE_FILE, HELP_FILE_PATH, HELP_DIR_PATH,
-    HELP_RECURSIVE, HELP_OUTPUT_PATH, HELP_PORT,
+    HELP_RECURSIVE, HELP_OUTPUT_PATH,
     HELP_AUTOML_METHOD, HELP_AUTOML_TRIALS, HELP_AUTOML_CV, HELP_AUTOML_METRIC, HELP_AUTOML_FAST_DEV_RUN,
     AUTOML_METHOD_DEFAULT, AUTOML_TRIALS_DEFAULT, AUTOML_CV_FOLDS_DEFAULT, AUTOML_METRIC_DEFAULT,
     DETECTED_MALICIOUS_PATHS_REPORT_PATH
 )
 from utils.logging_utils import get_logger
+
+def _serve_ipc_only() -> str:
+    import scanner_service
+    asyncio.run(scanner_service.run_ipc_forever())
+    return 'ipc'
 
 def main():
     logger = get_logger('kolo')
@@ -72,8 +78,7 @@ def main():
     sp_extract.add_argument('--label-inference', type=str, default='directory', choices=['filename', 'directory'], help=HELP_LABEL_INFERENCE)
     sp_extract.add_argument('--max-file-size', type=int, default=DEFAULT_MAX_FILE_SIZE, help=HELP_MAX_FILE_SIZE)
 
-    sp_serve = subs.add_parser('serve', help='启动FastAPI扫描服务')
-    sp_serve.add_argument('--port', type=int, default=DEFAULT_SERVE_PORT, help=HELP_PORT)
+    subs.add_parser('serve', help='启动IPC扫描服务')
 
     sp_train_routing = subs.add_parser('train-routing', help='训练路由门控与专家模型系统')
     sp_train_routing.add_argument('--use-existing-features', action='store_true', help=HELP_USE_EXISTING_FEATURES)
@@ -170,10 +175,8 @@ def main():
             logger.error(f'提取失败: {e}')
             raise
     elif args.command == 'serve':
-        import uvicorn
-        import scanner_service
         try:
-            uvicorn.run(scanner_service.app, host='0.0.0.0', port=args.port, reload=False)
+            _serve_ipc_only()
         except Exception as e:
             logger.error(f'服务启动失败: {e}')
             raise

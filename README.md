@@ -1,6 +1,6 @@
 # 神枢 - Axon V2
 
-基于机器学习的恶意软件检测与家族分类系统，核心由 LightGBM 二分类模型与基于 HDBSCAN 的家族识别组成，可通过命令行与 FastAPI 服务进行扫描与集成。
+基于机器学习的恶意软件检测与家族分类系统，核心由 LightGBM 二分类模型与基于 HDBSCAN 的家族识别组成，可通过命令行与 IPC 扫描服务进行扫描与集成。
 
 ## 项目概述
 
@@ -8,7 +8,7 @@
   - 恶意软件检测（二分类）：判断文件是否为恶意样本
   - 家族识别（聚类 + 分类器）：对恶意样本进行家族归属或标记为未知家族
   - 本地扫描与目录批量扫描，支持缓存与结果导出（JSON/CSV）
-  - 提供 HTTP 接口的扫描服务，便于系统集成
+  - 提供 IPC 接口的扫描服务，便于系统集成
 
 - 新增特性：路由门控与专家模型系统
   - 引入动态路由机制（Gating Model），基于样本特征（如加壳情况）自动将请求分发至最适合的专家模型。
@@ -19,7 +19,6 @@
 
 - 技术栈与核心依赖
   - Python、NumPy、Pandas、scikit-learn、LightGBM（运行时门控为规则/NumPy，无需 PyTorch）
-  - FastAPI + Uvicorn（服务端）
   - fast-hdbscan（多核优化的 HDBSCAN 实现，用于家族聚类，finetune 必备，`finetune.py:21`）
   - pefile（PE 结构读取）、matplotlib / seaborn（可视化）、tqdm（进度条）
 
@@ -45,7 +44,7 @@
 - 可选：设置环境变量（仅当前会话）
   ```powershell
   $env:SCANNER_ALLOWED_SCAN_ROOT="E:\\SampleRoot"
-  $env:SCANNER_SERVICE_PORT="8000"
+  $env:SCANNER_SERVICE_IPC_PORT="8765"
   $env:SCANNER_MAX_FILE_SIZE="65536"
   ```
 - 目录准备
@@ -95,10 +94,11 @@
   - 扫描过程中实时在控制台输出被识别为恶意样本的文件路径
   - 同时在 `reports/detected_malicious_paths.txt` 保存所有被识别为恶意的文件路径
 
-- 启动扫描服务（FastAPI）
+- 启动扫描服务（IPC）
   ```bash
-  python main.py serve --port 8000
+  python main.py serve
   ```
+  - 监听地址与端口由 `SCANNER_SERVICE_IPC_HOST`（默认 `127.0.0.1`）与 `SCANNER_SERVICE_IPC_PORT`（默认 `8765`）控制
 
 - 自动调优与交叉测试（AutoML）
   ```bash
@@ -108,37 +108,11 @@
   - 输出结果保存至 `reports/automl_comparison.json`
   - 支持参数：`--method`、`--trials`、`--cv`、`--metric`、`--fast-dev-run`、`--max-file-size`
 
-- HTTP 接口
-  - `POST /scan/file`：`{"file_path": "C:\\sample.exe"}`
-  - `POST /scan/batch`：批量扫描 `{"file_paths": ["C:\\sample1.exe", "C:\\sample2.exe"]}`
-    - 支持矩阵并行计算，通过一次性推理多个样本显著提升吞吐量。
-    - 批量大小受 `config.SERVICE_MAX_BATCH_SIZE` 限制（默认 64）。
-  - `POST /scan/upload`：上传文件进行扫描（multipart/form-data）
-  - `GET /health`：服务健康检查
-  - `POST /control/command`：`{"command": "exit", "token": "..."}`
-  - 示例
-  ```bash
-  curl -X POST "http://127.0.0.1:8000/scan/file" -H "Content-Type: application/json" -d '{"file_path":"C:\\Windows\\System32\\notepad.exe"}'
-  ```
-  ```bash
-  curl -X POST "http://127.0.0.1:8000/control/command" -H "Content-Type: application/json" -d '{"command":"exit"}'
-  ```
-  - 说明
-    - 默认仅允许本机（127.0.0.1 / ::1）调用退出指令
-    - 配置 `SCANNER_SERVICE_ADMIN_TOKEN` 后，远程调用需在请求体携带相同 `token`
-  - 响应字段
-    - 新增 `virus_family`：若识别为恶意样本则为家族名称，否则为 `null`
-  - 并发与响应
-    - 服务端对上传扫描采用线程池执行，避免阻塞事件循环
-    - 并发限制由 `config.SERVICE_CONCURRENCY_LIMIT` 控制（默认 256）
-    - 服务端默认不在终端打印恶意样本路径，可通过 `config.SERVICE_PRINT_MALICIOUS_PATHS` 开启或关闭
-
 - IPC 接口（本机进程间通信，TCP + JSON）
   - 启用方式
-    - 默认关闭，可通过环境变量开启：`SCANNER_SERVICE_IPC_ENABLED=1`
     - 监听地址与端口：`SCANNER_SERVICE_IPC_HOST`（默认 `127.0.0.1`）、`SCANNER_SERVICE_IPC_PORT`（默认 `8765`）
   - 传输与帧格式
-    - 传输层：TCP（通常用于同机回环地址，避免 HTTP 额外开销）
+    - 传输层：TCP（通常用于同机回环地址）
     - 帧格式：`4字节大端长度` + `UTF-8 JSON`
   - 请求格式（JSON）
     - `version`：协议版本，当前为 `1`
@@ -158,13 +132,13 @@
       - 响应：`{"ok":true,"payload":{"status":"ok"}}`
     - `scan_file`
       - 请求：`{"type":"scan_file","payload":{"file_path":"C:\\sample.exe"}}`
-      - 响应：与 HTTP 的 `/scan/file` 一致，包含 `virus_family`
+      - 响应：返回扫描结果，包含 `virus_family`
     - `scan_batch`
       - 请求：`{"type":"scan_batch","payload":{"file_paths":["C:\\a.exe","C:\\b.exe"]}}`
-      - 响应：与 HTTP 的 `/scan/batch` 一致（数组），包含 `virus_family`
+      - 响应：返回结果数组，包含 `virus_family`
     - `control`
       - 请求：`{"type":"control","payload":{"command":"exit","token":"..."}}`
-      - 行为：触发服务优雅退出（与 HTTP 的 `/control/command` 对齐）
+      - 行为：触发服务优雅退出
   - Python 调用示例
   ```python
   import json, socket, struct
@@ -186,7 +160,7 @@
   - 性能指标与限制
     - 单次消息体大小上限：`config.SERVICE_IPC_MAX_MESSAGE_BYTES`（默认 1MB），超过将返回错误并断开连接
     - 批量扫描数量上限：`config.SERVICE_MAX_BATCH_SIZE`
-    - 并发限制：与 HTTP 共用 `config.SERVICE_CONCURRENCY_LIMIT`
+    - 并发限制：`config.SERVICE_CONCURRENCY_LIMIT`
     - 默认超时：读取/写入超时由 `config.SERVICE_IPC_READ_TIMEOUT_SEC` / `config.SERVICE_IPC_WRITE_TIMEOUT_SEC` 控制；处理超时由 `config.SERVICE_IPC_REQUEST_TIMEOUT_SEC` 控制
     - 单连接最大请求数：`config.SERVICE_IPC_MAX_REQUESTS_PER_CONNECTION`（默认 128），超过将自动断开
     - 仅建议绑定到回环地址（默认 `127.0.0.1`），避免暴露本机文件扫描能力到外网
@@ -259,9 +233,9 @@
 
 - 环境变量覆盖（服务与扫描）
   - `SCANNER_LIGHTGBM_MODEL_PATH`、`SCANNER_FAMILY_CLASSIFIER_PATH`（`config/config.py:142-151`）
-  - `SCANNER_CACHE_PATH`、`SCANNER_MAX_FILE_SIZE`、`SCANNER_SERVICE_PORT`、`SCANNER_ALLOWED_SCAN_ROOT`（`config/config.py:146-153`）
+  - `SCANNER_CACHE_PATH`、`SCANNER_MAX_FILE_SIZE`、`SCANNER_ALLOWED_SCAN_ROOT`（`config/config.py:146-153`）
   - `SCANNER_SERVICE_ADMIN_TOKEN`、`SCANNER_SERVICE_EXIT_COMMAND`（`config/config.py`）
-  - `SCANNER_SERVICE_IPC_ENABLED`、`SCANNER_SERVICE_IPC_HOST`、`SCANNER_SERVICE_IPC_PORT` 等（`config/config.py`）
+  - `SCANNER_SERVICE_IPC_HOST`、`SCANNER_SERVICE_IPC_PORT` 等（`config/config.py`）
   - 服务端并发与打印行为：`SERVICE_CONCURRENCY_LIMIT`、`SERVICE_PRINT_MALICIOUS_PATHS`（`config/config.py:150-151`）
 
 ## 开发指南
@@ -304,7 +278,7 @@
 
 - 启动服务
   ```bash
-  python main.py serve --port 8000
+  python main.py serve
   ```
 
 - 性能优化建议

@@ -1,18 +1,11 @@
 import os
-import shutil
-import tempfile
-import sys
 import signal
 import asyncio
 import json
 import struct
 from contextlib import suppress
-from pathlib import Path
 from threading import Lock
 from typing import Optional, List, Any, Dict, Tuple
-
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
-from pydantic import BaseModel, Field
 
 from scanner import MalwareScanner
 from config.config import (
@@ -20,12 +13,10 @@ from config.config import (
     FAMILY_CLASSIFIER_PATH,
     SCAN_CACHE_PATH,
     DEFAULT_MAX_FILE_SIZE,
-    DEFAULT_SERVE_PORT,
     ENV_LIGHTGBM_MODEL_PATH,
     ENV_FAMILY_CLASSIFIER_PATH,
     ENV_CACHE_PATH,
     ENV_MAX_FILE_SIZE,
-    ENV_SERVICE_PORT,
     ENV_ALLOWED_SCAN_ROOT,
     SERVICE_CONCURRENCY_LIMIT,
     SERVICE_PRINT_MALICIOUS_PATHS,
@@ -35,7 +26,6 @@ from config.config import (
     ENV_SERVICE_ADMIN_TOKEN,
     ENV_SERVICE_EXIT_COMMAND,
     SERVICE_MAX_BATCH_SIZE,
-    SERVICE_IPC_ENABLED,
     SERVICE_IPC_HOST,
     SERVICE_IPC_PORT,
     SERVICE_IPC_MAX_MESSAGE_BYTES,
@@ -43,7 +33,6 @@ from config.config import (
     SERVICE_IPC_WRITE_TIMEOUT_SEC,
     SERVICE_IPC_REQUEST_TIMEOUT_SEC,
     SERVICE_IPC_MAX_REQUESTS_PER_CONNECTION,
-    ENV_SERVICE_IPC_ENABLED,
     ENV_SERVICE_IPC_HOST,
     ENV_SERVICE_IPC_PORT,
     ENV_SERVICE_IPC_MAX_MESSAGE_BYTES,
@@ -87,22 +76,6 @@ def _env_float(name: str, default: float) -> float:
     return float(value) if value is not None else default
 
 
-def _env_bool(name: str, default: bool) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    normalized = value.strip().lower()
-    if normalized in {'1', 'true', 'yes', 'y', 'on'}:
-        return True
-    if normalized in {'0', 'false', 'no', 'n', 'off'}:
-        return False
-    return default
-
-
-def _get_ipc_enabled() -> bool:
-    return _env_bool(ENV_SERVICE_IPC_ENABLED, SERVICE_IPC_ENABLED)
-
-
 def _get_ipc_host() -> str:
     return os.getenv(ENV_SERVICE_IPC_HOST, SERVICE_IPC_HOST)
 
@@ -129,22 +102,6 @@ def _get_ipc_request_timeout_sec() -> float:
 
 def _get_ipc_max_requests_per_connection() -> int:
     return _env_int(ENV_SERVICE_IPC_MAX_REQUESTS_PER_CONNECTION, SERVICE_IPC_MAX_REQUESTS_PER_CONNECTION)
-
-
-class FileScanRequest(BaseModel):
-    file_path: str = Field(..., description='需要扫描的文件绝对路径')
-
-
-class FileBatchRequest(BaseModel):
-    file_paths: List[str] = Field(..., description='需要扫描的文件路径列表')
-
-
-class ControlRequest(BaseModel):
-    command: str = Field(..., description='控制指令')
-    token: Optional[str] = Field(None, description='管理令牌')
-
-
-app = FastAPI(title='KoloVirusDetector Scanner Service', version='1.0.0')
 
 _scanner_lock = Lock()
 _scanner_instance: Optional[MalwareScanner] = None
@@ -191,16 +148,6 @@ def _get_exit_command() -> str:
 
 def _get_admin_token() -> str:
     return os.getenv(ENV_SERVICE_ADMIN_TOKEN, SERVICE_ADMIN_TOKEN)
-
-
-def _is_authorized_control(request: Request, token: Optional[str]) -> bool:
-    expected = _get_admin_token()
-    if expected:
-        return token == expected
-
-    client = getattr(request, 'client', None)
-    host = getattr(client, 'host', None) if client else None
-    return host in set(SERVICE_CONTROL_LOCALHOSTS)
 
 
 def _cleanup_environment() -> None:
@@ -477,139 +424,17 @@ async def stop_ipc_server() -> None:
         _logger.info('IPC服务已关闭')
 
 
-@app.on_event('startup')
-async def _startup() -> None:
+async def run_ipc_forever(host: Optional[str] = None, port: Optional[int] = None) -> None:
     get_scanner()
-    if _get_ipc_enabled():
-        try:
-            await start_ipc_server()
-        except Exception as e:
-            _logger.error(f'IPC服务启动失败: {e}')
-
-
-@app.on_event('shutdown')
-async def _shutdown() -> None:
-    with suppress(Exception):
-        await stop_ipc_server()
-    _cleanup_environment()
-
-
-@app.get('/health')
-def health() -> dict:
-    scanner = get_scanner()
-    return {
-        'status': 'ok',
-        'cache_size': len(scanner.scan_cache),
-        'model_path': os.getenv(ENV_LIGHTGBM_MODEL_PATH, MODEL_PATH)
-    }
-
-
-@app.post('/scan/file')
-async def scan_file(request: FileScanRequest) -> dict:
-    scanner = get_scanner()
-    valid_path = _validate_user_path(request.file_path)
-    if not valid_path:
-        raise HTTPException(status_code=400, detail='路径不合法或不在允许的扫描目录内')
-
-    async with _scan_semaphore:
-        result = await asyncio.to_thread(scanner.scan_file, valid_path)
-
-    if result is None:
-        raise HTTPException(status_code=400, detail='文件不是有效的PE或扫描失败')
-    result['virus_family'] = (result.get('malware_family') or {}).get('family_name')
-    return result
-
-
-@app.post('/scan/batch')
-async def scan_batch(request: FileBatchRequest) -> List[dict]:
-    scanner = get_scanner()
-    
-    if len(request.file_paths) > SERVICE_MAX_BATCH_SIZE:
-        raise HTTPException(status_code=400, detail=f'批量扫描数量超过限制: {SERVICE_MAX_BATCH_SIZE}')
-    
-    # Pre-validate to save time on obviously wrong requests? 
-    # Or just let scanner handle it. 
-    # Let's validate here to ensure we only pass valid paths to scanner if possible, 
-    # but scanner does validation too.
-    # However, to respect ALLOWED_SCAN_ROOT from service env, we should check.
-    
-    valid_paths = []
-    for p in request.file_paths:
-        vp = _validate_user_path(p)
-        if vp:
-            valid_paths.append(vp)
-            
-    if not valid_paths:
-        return []
-
-    async with _scan_semaphore:
-        results = await asyncio.to_thread(scanner.scan_batch, valid_paths)
-        
-    for res in results:
-        res['virus_family'] = (res.get('malware_family') or {}).get('family_name')
-        
-    return results
-
-
-@app.post('/scan/upload')
-async def scan_upload(file: UploadFile = File(...)) -> dict:
-    scanner = get_scanner()
-    suffix = Path(file.filename or '').suffix or '.bin'
-
-    def _scan_sync():
-        try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
-                shutil.copyfileobj(file.file, tmp_file)
-                temp_path = tmp_file.name
-        finally:
-            file.file.close()
-        try:
-            result_local = scanner.scan_file(temp_path)
-        finally:
-            os.unlink(temp_path)
-        return result_local
-
-    async with _scan_semaphore:
-        result = await asyncio.to_thread(_scan_sync)
-
-    if result is None:
-        raise HTTPException(status_code=400, detail='文件不是有效的PE或扫描失败')
-
-    result['virus_family'] = (result.get('malware_family') or {}).get('family_name')
-    result['original_filename'] = file.filename
-    return result
-
-
-@app.post('/cache/save')
-async def flush_cache() -> dict:
-    scanner = get_scanner()
-
-    if not getattr(scanner, 'enable_cache', False):
-        return {'status': 'disabled', 'cache_size': 0}
-
-    async with _scan_semaphore:
-        await asyncio.to_thread(scanner._save_cache)
-
-    return {'status': 'saved', 'cache_size': len(scanner.scan_cache)}
-
-
-@app.post('/control/command')
-async def control_command(control: ControlRequest, request: Request, background_tasks: BackgroundTasks) -> dict:
-    if control.command != _get_exit_command():
-        raise HTTPException(status_code=400, detail='未知控制指令')
-
-    if not _is_authorized_control(request, control.token):
-        raise HTTPException(status_code=403, detail='无权限执行控制指令')
-
-    background_tasks.add_task(_cleanup_environment)
-    background_tasks.add_task(_trigger_process_exit)
-
-    return {'status': 'shutting_down'}
+    await start_ipc_server(host=host, port=port)
+    try:
+        await asyncio.Event().wait()
+    finally:
+        with suppress(Exception):
+            await stop_ipc_server()
+        _cleanup_environment()
 
 
 if __name__ == '__main__':
-    import uvicorn
-
-    port = _env_int(ENV_SERVICE_PORT, DEFAULT_SERVE_PORT)
-    uvicorn.run(app, host='0.0.0.0', port=port, reload=False)
+    asyncio.run(run_ipc_forever())
 
