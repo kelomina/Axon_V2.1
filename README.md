@@ -112,7 +112,7 @@
   - `POST /scan/file`：`{"file_path": "C:\\sample.exe"}`
   - `POST /scan/batch`：批量扫描 `{"file_paths": ["C:\\sample1.exe", "C:\\sample2.exe"]}`
     - 支持矩阵并行计算，通过一次性推理多个样本显著提升吞吐量。
-    - 批量大小受 `config.SERVICE_MAX_BATCH_SIZE` 限制（默认 128）。
+    - 批量大小受 `config.SERVICE_MAX_BATCH_SIZE` 限制（默认 64）。
   - `POST /scan/upload`：上传文件进行扫描（multipart/form-data）
   - `GET /health`：服务健康检查
   - `POST /control/command`：`{"command": "exit", "token": "..."}`
@@ -132,6 +132,64 @@
     - 服务端对上传扫描采用线程池执行，避免阻塞事件循环
     - 并发限制由 `config.SERVICE_CONCURRENCY_LIMIT` 控制（默认 256）
     - 服务端默认不在终端打印恶意样本路径，可通过 `config.SERVICE_PRINT_MALICIOUS_PATHS` 开启或关闭
+
+- IPC 接口（本机进程间通信，TCP + JSON）
+  - 启用方式
+    - 默认关闭，可通过环境变量开启：`SCANNER_SERVICE_IPC_ENABLED=1`
+    - 监听地址与端口：`SCANNER_SERVICE_IPC_HOST`（默认 `127.0.0.1`）、`SCANNER_SERVICE_IPC_PORT`（默认 `8765`）
+  - 传输与帧格式
+    - 传输层：TCP（通常用于同机回环地址，避免 HTTP 额外开销）
+    - 帧格式：`4字节大端长度` + `UTF-8 JSON`
+  - 请求格式（JSON）
+    - `version`：协议版本，当前为 `1`
+    - `id`：请求ID（字符串，可选）
+    - `type`：消息类型（字符串）
+    - `payload`：消息体（对象）
+    - `timeout_ms`：单次请求处理超时（可选，毫秒；不能大于服务端默认上限）
+  - 响应格式（JSON）
+    - `version`：协议版本
+    - `id`：回显请求ID
+    - `ok`：是否成功
+    - 成功时：`payload` 为返回数据
+    - 失败时：`error` 为 `{code, message, details?}`
+  - 消息类型
+    - `health`
+      - 请求：`{"type":"health","payload":{}}`
+      - 响应：`{"ok":true,"payload":{"status":"ok"}}`
+    - `scan_file`
+      - 请求：`{"type":"scan_file","payload":{"file_path":"C:\\sample.exe"}}`
+      - 响应：与 HTTP 的 `/scan/file` 一致，包含 `virus_family`
+    - `scan_batch`
+      - 请求：`{"type":"scan_batch","payload":{"file_paths":["C:\\a.exe","C:\\b.exe"]}}`
+      - 响应：与 HTTP 的 `/scan/batch` 一致（数组），包含 `virus_family`
+    - `control`
+      - 请求：`{"type":"control","payload":{"command":"exit","token":"..."}}`
+      - 行为：触发服务优雅退出（与 HTTP 的 `/control/command` 对齐）
+  - Python 调用示例
+  ```python
+  import json, socket, struct
+
+  def ipc_call(host, port, msg):
+      data = json.dumps(msg, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+      with socket.create_connection((host, port), timeout=3) as s:
+          s.sendall(struct.pack(">I", len(data)) + data)
+          header = s.recv(4)
+          size = struct.unpack(">I", header)[0]
+          buf = b""
+          while len(buf) < size:
+              buf += s.recv(size - len(buf))
+      return json.loads(buf.decode("utf-8"))
+
+  resp = ipc_call("127.0.0.1", 8765, {"version": 1, "id": "1", "type": "scan_file", "payload": {"file_path": r"C:\Windows\System32\notepad.exe"}})
+  print(resp)
+  ```
+  - 性能指标与限制
+    - 单次消息体大小上限：`config.SERVICE_IPC_MAX_MESSAGE_BYTES`（默认 1MB），超过将返回错误并断开连接
+    - 批量扫描数量上限：`config.SERVICE_MAX_BATCH_SIZE`
+    - 并发限制：与 HTTP 共用 `config.SERVICE_CONCURRENCY_LIMIT`
+    - 默认超时：读取/写入超时由 `config.SERVICE_IPC_READ_TIMEOUT_SEC` / `config.SERVICE_IPC_WRITE_TIMEOUT_SEC` 控制；处理超时由 `config.SERVICE_IPC_REQUEST_TIMEOUT_SEC` 控制
+    - 单连接最大请求数：`config.SERVICE_IPC_MAX_REQUESTS_PER_CONNECTION`（默认 128），超过将自动断开
+    - 仅建议绑定到回环地址（默认 `127.0.0.1`），避免暴露本机文件扫描能力到外网
 
 ## 路由门控系统训练
 
@@ -203,6 +261,7 @@
   - `SCANNER_LIGHTGBM_MODEL_PATH`、`SCANNER_FAMILY_CLASSIFIER_PATH`（`config/config.py:142-151`）
   - `SCANNER_CACHE_PATH`、`SCANNER_MAX_FILE_SIZE`、`SCANNER_SERVICE_PORT`、`SCANNER_ALLOWED_SCAN_ROOT`（`config/config.py:146-153`）
   - `SCANNER_SERVICE_ADMIN_TOKEN`、`SCANNER_SERVICE_EXIT_COMMAND`（`config/config.py`）
+  - `SCANNER_SERVICE_IPC_ENABLED`、`SCANNER_SERVICE_IPC_HOST`、`SCANNER_SERVICE_IPC_PORT` 等（`config/config.py`）
   - 服务端并发与打印行为：`SERVICE_CONCURRENCY_LIMIT`、`SERVICE_PRINT_MALICIOUS_PATHS`（`config/config.py:150-151`）
 
 ## 开发指南
