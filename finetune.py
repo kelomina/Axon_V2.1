@@ -7,6 +7,7 @@ from tqdm import tqdm
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import MiniBatchKMeans
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
@@ -15,12 +16,10 @@ import pickle
 try:
     import fast_hdbscan
     FAST_HDBSCAN_AVAILABLE = True
-    print("[+] fast_hdbscan available, using multicore optimized HDBSCAN")
+    print("[+] fast_hdbscan available")
 except ImportError:
     FAST_HDBSCAN_AVAILABLE = False
-    print("[-] fast_hdbscan not available, please install fast-hdbscan package")
-    print("    pip install fast-hdbscan")
-    exit(1)
+    print("[-] fast_hdbscan not available")
 
 from training.data_loader import load_dataset
 from models.family_classifier import FamilyClassifier
@@ -29,7 +28,10 @@ from config.config import (
     DEFAULT_MIN_CLUSTER_SIZE, DEFAULT_MIN_SAMPLES, DEFAULT_MIN_FAMILY_SIZE,
     DEFAULT_TREAT_NOISE_AS_FAMILY,
     HDBSCAN_SAVE_DIR, HDBSCAN_CLUSTER_FIG_PATH, HDBSCAN_PCA_FIG_PATH,
-    VIS_SAMPLE_SIZE, VIS_TSNE_PERPLEXITY, PCA_DIMENSION_FOR_CLUSTERING, DEFAULT_RANDOM_STATE
+    VIS_SAMPLE_SIZE, VIS_TSNE_PERPLEXITY, PCA_DIMENSION_FOR_CLUSTERING, DEFAULT_RANDOM_STATE,
+    FAST_HDBSCAN_PCA_DIMENSION, HDBSCAN_FLOAT32_FOR_CLUSTERING,
+    FAMILY_CLUSTERING_BACKEND, FAST_HDBSCAN_MAX_SAMPLES,
+    KMEANS_N_CLUSTERS, KMEANS_BATCH_SIZE, KMEANS_MAX_ITER, KMEANS_N_INIT
 )
 
 
@@ -80,22 +82,71 @@ def perform_hdbscan_clustering(features, min_cluster_size=50, min_samples=10):
     scaler = StandardScaler()
     features_scaled = scaler.fit_transform(features)
 
-    if features_scaled.shape[1] > PCA_DIMENSION_FOR_CLUSTERING:
-        print(f"    [*] High feature dimension, reducing to {PCA_DIMENSION_FOR_CLUSTERING} dimensions using PCA for better clustering...")
-        pca = PCA(n_components=PCA_DIMENSION_FOR_CLUSTERING, random_state=DEFAULT_RANDOM_STATE)
+    pca_dim = PCA_DIMENSION_FOR_CLUSTERING
+    try:
+        if int(FAST_HDBSCAN_PCA_DIMENSION) > 0:
+            pca_dim = min(pca_dim, int(FAST_HDBSCAN_PCA_DIMENSION))
+    except Exception:
+        pass
+
+    if features_scaled.shape[1] > pca_dim:
+        print(f"    [*] High feature dimension, reducing to {pca_dim} dimensions using PCA for better clustering...")
+        pca = PCA(n_components=pca_dim, random_state=DEFAULT_RANDOM_STATE)
         features_for_clustering = pca.fit_transform(features_scaled)
         print(f"    [*] Reduced feature dimension: {features_for_clustering.shape[1]}")
     else:
         features_for_clustering = features_scaled
 
-    print("    [*] Using fast_hdbscan multicore optimized version")
-    clusterer = fast_hdbscan.HDBSCAN(
-        min_cluster_size=min_cluster_size,
-        min_samples=min_samples,
-        cluster_selection_method='eom'
-    )
+    if HDBSCAN_FLOAT32_FOR_CLUSTERING:
+        try:
+            features_for_clustering = features_for_clustering.astype(np.float32, copy=False)
+        except Exception:
+            pass
 
-    labels = clusterer.fit_predict(features_for_clustering)
+    backend = FAMILY_CLUSTERING_BACKEND
+    if backend == 'auto':
+        use_fast = FAST_HDBSCAN_AVAILABLE
+        try:
+            max_samples = int(FAST_HDBSCAN_MAX_SAMPLES)
+        except Exception:
+            max_samples = 0
+        if (not use_fast) or (max_samples > 0 and features_for_clustering.shape[0] > max_samples):
+            backend = 'minibatch_kmeans'
+        else:
+            backend = 'fast_hdbscan'
+
+    if backend == 'fast_hdbscan':
+        if not FAST_HDBSCAN_AVAILABLE:
+            raise RuntimeError('fast_hdbscan not available')
+        print("    [*] Using fast_hdbscan multicore optimized version")
+        clusterer = fast_hdbscan.HDBSCAN(
+            min_cluster_size=min_cluster_size,
+            min_samples=min_samples,
+            cluster_selection_method='eom'
+        )
+
+        try:
+            labels = clusterer.fit_predict(features_for_clustering)
+        except MemoryError as e:
+            print(f"[!] HDBSCAN MemoryError: {e}")
+            print(f"    features_for_clustering.shape={getattr(features_for_clustering, 'shape', None)} dtype={getattr(features_for_clustering, 'dtype', None)}")
+            raise
+        except Exception as e:
+            print(f"[!] HDBSCAN failed: {e}")
+            print(f"    features_for_clustering.shape={getattr(features_for_clustering, 'shape', None)} dtype={getattr(features_for_clustering, 'dtype', None)}")
+            raise
+    elif backend == 'minibatch_kmeans':
+        print("    [*] Using MiniBatchKMeans for clustering")
+        clusterer = MiniBatchKMeans(
+            n_clusters=int(KMEANS_N_CLUSTERS),
+            batch_size=int(KMEANS_BATCH_SIZE),
+            max_iter=int(KMEANS_MAX_ITER),
+            n_init=int(KMEANS_N_INIT),
+            random_state=DEFAULT_RANDOM_STATE
+        )
+        labels = clusterer.fit_predict(features_for_clustering)
+    else:
+        raise ValueError(f'Unsupported FAMILY_CLUSTERING_BACKEND: {backend}')
 
     unique_labels = np.unique(labels)
     n_clusters = len(unique_labels) - (1 if -1 in unique_labels else 0)
@@ -355,6 +406,7 @@ def main(args):
     classifier = FamilyClassifier()
     classifier.fit(malicious_features, cluster_labels, family_names)
     classifier.save(os.path.join(args.save_dir, 'family_classifier.pkl'))
+    print(f"[+] Family classifier saved to: {os.path.join(args.save_dir, 'family_classifier.pkl')}")
 
     os.makedirs(HDBSCAN_SAVE_DIR, exist_ok=True)
     visualize_clusters(malicious_features, cluster_labels,

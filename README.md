@@ -19,8 +19,8 @@
 
 - 技术栈与核心依赖
   - Python、NumPy、Pandas、scikit-learn、LightGBM（运行时门控为规则/NumPy，无需 PyTorch）
-  - fast-hdbscan（多核优化的 HDBSCAN 实现，用于家族聚类，finetune 必备，`finetune.py:21`）
-  - pefile（PE 结构读取）、matplotlib / seaborn（可视化）、tqdm（进度条）
+  - fast-hdbscan（多核优化的 HDBSCAN 实现，用于家族聚类；更适合低维欧氏空间输入）
+- pefile（PE 结构读取）、matplotlib / seaborn（可视化）、tqdm（进度条）
 
 ## 环境要求
 
@@ -28,7 +28,7 @@
 - Python：建议 3.10 及以上
 - 必备软件：`pip`、可选 `virtualenv`/`venv`
 - 依赖：参见 `requirements.txt`
-  - 需确保安装 `fast-hdbscan`，否则家族聚类流程会退出（`finetune.py:21`）
+  - 家族聚类默认使用 `fast-hdbscan`；如遇聚类阶段异常退出，可在 `config/config.py` 调整 `FAST_HDBSCAN_PCA_DIMENSION`（建议 10-20）与 `HDBSCAN_FLOAT32_FOR_CLUSTERING` 以降低内存与稳定运行
 
 ## 安装指南
 
@@ -306,6 +306,7 @@
 
 - 已知问题与解决方案
   - 未安装 `fast-hdbscan` 时，家族聚类直接退出（请安装依赖）`finetune.py:19-23`
+  - Windows 下聚类阶段可能出现无 Python 报错的异常退出（例如退出码 -1073741571）；可在 `config/config.py` 将 `FAMILY_CLUSTERING_BACKEND` 设为 `minibatch_kmeans`，或保持 `auto` 由程序自动切换
   - 模型/分类器路径不存在导致启动失败（请检查路径）`scanner_service.py:59-65`
   - 非 PE 文件会被跳过（属预期行为）`scanner.py:211-213`
   - 特征维度不一致会自动填充/截断并记录汇总（由 `PE_DIM_SUMMARY_DATASET`、`PE_DIM_SUMMARY_INCREMENTAL`、`PE_DIM_SUMMARY_RAW` 指定的 JSON 文件输出统计）`training/data_loader.py:61-73,99-113`
