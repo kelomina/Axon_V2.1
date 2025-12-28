@@ -83,7 +83,7 @@
 
 - 家族聚类与分类器训练（生成 `family_classifier.pkl` 与可视化图）
   ```bash
-  python main.py finetune --plot-pca --min-cluster-size 30 --min-family-size 10
+  python main.py finetune --plot-pca --min-cluster-size 2 --min-samples 1 --min-family-size 1 --treat-noise-as-family
   ```
 
 - 扫描文件或目录并导出结果
@@ -102,11 +102,14 @@
 
 - 自动调优与交叉测试（AutoML）
   ```bash
-  python main.py auto-tune --method optuna --trials 50 --cv 5 --metric roc_auc --use-existing-features
-  python main.py auto-tune --method hyperopt --trials 50 --cv 5 --metric accuracy --use-existing-features
+  python main.py auto-tune --method optuna --trials 50 --cv 5 --metric f1 --use-existing-features
+  python main.py auto-tune --method hyperopt --trials 50 --cv 5 --metric precision --use-existing-features
   ```
   - 输出结果保存至 `reports/automl_comparison.json`
-  - 支持参数：`--method`、`--trials`、`--cv`、`--metric`、`--fast-dev-run`、`--max-file-size`
+  - 支持参数：`--method`、`--trials`、`--cv`、`--metric`（支持 `f1`、`precision`、`recall`、`roc_auc`、`accuracy`）、`--fast-dev-run`、`--max-file-size`
+  - 增强特性：
+    - 支持自动优化类别权重 `scale_pos_weight` 以平衡样本。
+    - 调优过程中自动监控并记录多个辅助指标（Precision, Recall, F1）。
 
 - IPC 接口（本机进程间通信，TCP + JSON）
   - 启用方式
@@ -176,6 +179,10 @@
   python main.py train-routing --use-existing-features
   # 或者强制提取并保存特征
   python main.py train-routing --save-features
+  # 一键执行完整流程（特征提取 -> 超参调优 -> 路由训练 -> 家族聚类）
+  python main.py train-all
+  # 一键执行流程并跳过超参调优（直接使用 config.py 中的参数）
+  python main.py train-all --skip-tuning
   ```
   该脚本会自动：
   1. 加载或提取特征（支持 `--use-existing-features` 和 `--save-features` 参数）。
@@ -185,7 +192,7 @@
   5. 保存所有模型至 `saved_models/` 目录。
 
 - 配置：
-  可以在 `config/config.py` 中调整 `GATING_*` 相关参数，如网络结构、阈值等。
+  可以在 `config/config.py` 中调整 `GATING_*` 相关参数与规则阈值；当前默认使用 `GATING_MODE='rule'`，门控采用启发式规则并跳过门控模型训练。
 
 ### 门控机制验证
 
@@ -230,6 +237,7 @@
   - `--file-extensions`、`--label-inference`（`main.py:34-37,66-71`）
   - `--num-boost-round`、`--incremental-rounds`、`--incremental-early-stopping`（`main.py:38-41`）
   - `--min-cluster-size`、`--min-samples`、`--min-family-size`（`main.py:49-51`）
+  - `--treat-noise-as-family`：将聚类噪声点视为独立家族（当 `min-family-size` 为 1 时，每个噪声点分配唯一家族 ID）
 
 - 环境变量覆盖（服务与扫描）
   - `SCANNER_LIGHTGBM_MODEL_PATH`、`SCANNER_FAMILY_CLASSIFIER_PATH`（`config/config.py:142-151`）
@@ -266,6 +274,14 @@
     - 检测阈值与误报处理（`config.PREDICTION_THRESHOLD`、增量训练权重）
     - 服务端路径校验与上传扫描（`scanner_service.py:97-134`）
 
+- 数据集划分 (Train/Val/Test)
+  - 系统采用 **6:2:2** 的比例进行数据集划分。
+  - 划分逻辑通过 `DEFAULT_TEST_SIZE` (0.2) 和 `DEFAULT_VAL_SIZE` (0.25) 共同控制：
+    1. 首先从全量数据中划分出 20% 作为独立测试集。
+    2. 从剩余的 80% 数据中划分出 25%（即总量的 20%）作为验证集。
+    3. 剩余 60% 数据用于模型训练。
+  - 相关参数均在 `config/config.py` 中集中管理。
+
 ## 部署说明
 
 - 准备工件
@@ -282,7 +298,7 @@
   ```
 
 - 性能优化建议
-- 训练阶段：调整 `LIGHTGBM_NUM_THREADS_MAX`、`num_leaves`、`learning_rate`、`DEFAULT_EARLY_STOPPING_ROUNDS`（默认 200）。当前默认：`num_leaves=281`、`learning_rate=0.0054273608259950085`（`config/config.py`，`training/train_lightgbm.py`）
+  - 训练阶段：调整 `LIGHTGBM_NUM_THREADS_MAX`、`DEFAULT_LIGHTGBM_NUM_LEAVES`、`DEFAULT_LIGHTGBM_LEARNING_RATE`、`DEFAULT_EARLY_STOPPING_ROUNDS`（默认 200）以及 `DEFAULT_INCREMENTAL_EARLY_STOPPING`。当前默认：`num_leaves=281`、`learning_rate=0.0054273608259950085`（`config/config.py`，`training/train_lightgbm.py`）
   - 推理阶段：合理设置 `DEFAULT_MAX_FILE_SIZE`，使用缓存文件 `scan_cache.json`
   - 可视化与聚类：降维到 `PCA_DIMENSION_FOR_CLUSTERING`，控制采样量 `VIS_SAMPLE_SIZE`
 
@@ -292,7 +308,7 @@
   - 未安装 `fast-hdbscan` 时，家族聚类直接退出（请安装依赖）`finetune.py:19-23`
   - 模型/分类器路径不存在导致启动失败（请检查路径）`scanner_service.py:59-65`
   - 非 PE 文件会被跳过（属预期行为）`scanner.py:211-213`
-  - 特征维度不一致会自动填充/截断并记录汇总（数据/增量/扫描路径均有统计文件输出）`training/data_loader.py:61-73,99-113`
+  - 特征维度不一致会自动填充/截断并记录汇总（由 `PE_DIM_SUMMARY_DATASET`、`PE_DIM_SUMMARY_INCREMENTAL`、`PE_DIM_SUMMARY_RAW` 指定的 JSON 文件输出统计）`training/data_loader.py:61-73,99-113`
   - 训练与评估统一使用带列名的特征 DataFrame，列名规范为 `feature_{i}` 且顺序一致，避免出现 sklearn 提示 “X does not have valid feature names”，相关处理见 `training/automl.py:25-36,54-60`
   - 扫描完成后立即释放 PE 解析句柄与上传临时文件，避免 Windows 上文件锁定问题（`features/extractor_in_memory.py:117-684`、`scanner_service.py:179-205`）
 

@@ -11,14 +11,15 @@ from config.config import (
     LIGHTGBM_FEATURE_FRACTION, LIGHTGBM_BAGGING_FRACTION, LIGHTGBM_BAGGING_FREQ,
     LIGHTGBM_MIN_GAIN_TO_SPLIT, LIGHTGBM_MIN_DATA_IN_LEAF,
     AUTOML_RESULTS_PATH, AUTOML_TRIALS_DEFAULT, AUTOML_CV_FOLDS_DEFAULT, AUTOML_METHOD_DEFAULT,
-    AUTOML_METRIC_DEFAULT,
+    AUTOML_METRIC_DEFAULT, AUTOML_ADDITIONAL_METRICS,
     AUTOML_LGBM_NUM_LEAVES_MIN, AUTOML_LGBM_NUM_LEAVES_MAX,
     AUTOML_LGBM_LEARNING_RATE_MIN, AUTOML_LGBM_LEARNING_RATE_MAX,
     AUTOML_LGBM_FEATURE_FRACTION_MIN, AUTOML_LGBM_FEATURE_FRACTION_MAX,
     AUTOML_LGBM_BAGGING_FRACTION_MIN, AUTOML_LGBM_BAGGING_FRACTION_MAX,
     AUTOML_LGBM_MIN_DATA_IN_LEAF_MIN, AUTOML_LGBM_MIN_DATA_IN_LEAF_MAX,
     AUTOML_LGBM_MIN_GAIN_TO_SPLIT_MIN, AUTOML_LGBM_MIN_GAIN_TO_SPLIT_MAX,
-    AUTOML_LGBM_BAGGING_FREQ_MIN, AUTOML_LGBM_BAGGING_FREQ_MAX
+    AUTOML_LGBM_BAGGING_FREQ_MIN, AUTOML_LGBM_BAGGING_FREQ_MAX,
+    AUTOML_LGBM_SCALE_POS_WEIGHT_MIN, AUTOML_LGBM_SCALE_POS_WEIGHT_MAX
 )
 from training.data_loader import load_dataset
 
@@ -63,7 +64,15 @@ def _cv_score(model, X, y, cv_folds, metric):
     if len(np.unique(y)) < 2:
         return 0.0
     cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=DEFAULT_RANDOM_STATE)
-    scoring = 'roc_auc' if metric == 'roc_auc' else 'accuracy'
+    # 支持更多指标
+    valid_metrics = {
+        'roc_auc': 'roc_auc',
+        'accuracy': 'accuracy',
+        'f1': 'f1',
+        'precision': 'precision',
+        'recall': 'recall'
+    }
+    scoring = valid_metrics.get(metric, 'roc_auc')
     scores = cross_val_score(model, X, y, cv=cv, scoring=scoring)
     return float(np.mean(scores))
 
@@ -80,6 +89,7 @@ def _optuna_tune_lgbm(X, y, cv_folds, trials, metric):
             'bagging_freq': trial.suggest_int('bagging_freq', AUTOML_LGBM_BAGGING_FREQ_MIN, AUTOML_LGBM_BAGGING_FREQ_MAX),
             'min_gain_to_split': trial.suggest_float('min_gain_to_split', AUTOML_LGBM_MIN_GAIN_TO_SPLIT_MIN, AUTOML_LGBM_MIN_GAIN_TO_SPLIT_MAX),
             'min_data_in_leaf': trial.suggest_int('min_data_in_leaf', AUTOML_LGBM_MIN_DATA_IN_LEAF_MIN, AUTOML_LGBM_MIN_DATA_IN_LEAF_MAX),
+            'scale_pos_weight': trial.suggest_float('scale_pos_weight', AUTOML_LGBM_SCALE_POS_WEIGHT_MIN, AUTOML_LGBM_SCALE_POS_WEIGHT_MAX),
             'verbosity': -1,
             'random_state': DEFAULT_RANDOM_STATE
         }
@@ -108,7 +118,8 @@ def _hyperopt_tune_lgbm(X, y, cv_folds, trials, metric):
         'bagging_fraction': hp.uniform('bagging_fraction', AUTOML_LGBM_BAGGING_FRACTION_MIN, AUTOML_LGBM_BAGGING_FRACTION_MAX),
         'bagging_freq': hp.quniform('bagging_freq', AUTOML_LGBM_BAGGING_FREQ_MIN, AUTOML_LGBM_BAGGING_FREQ_MAX, 1),
         'min_gain_to_split': hp.uniform('min_gain_to_split', AUTOML_LGBM_MIN_GAIN_TO_SPLIT_MIN, AUTOML_LGBM_MIN_GAIN_TO_SPLIT_MAX),
-        'min_data_in_leaf': hp.quniform('min_data_in_leaf', AUTOML_LGBM_MIN_DATA_IN_LEAF_MIN, AUTOML_LGBM_MIN_DATA_IN_LEAF_MAX, 1)
+        'min_data_in_leaf': hp.quniform('min_data_in_leaf', AUTOML_LGBM_MIN_DATA_IN_LEAF_MIN, AUTOML_LGBM_MIN_DATA_IN_LEAF_MAX, 1),
+        'scale_pos_weight': hp.uniform('scale_pos_weight', AUTOML_LGBM_SCALE_POS_WEIGHT_MIN, AUTOML_LGBM_SCALE_POS_WEIGHT_MAX)
     }
     def objective(params):
         params_cast = {
@@ -121,6 +132,7 @@ def _hyperopt_tune_lgbm(X, y, cv_folds, trials, metric):
             'bagging_freq': int(params['bagging_freq']),
             'min_gain_to_split': float(params['min_gain_to_split']),
             'min_data_in_leaf': int(params['min_data_in_leaf']),
+            'scale_pos_weight': float(params['scale_pos_weight']),
             'verbosity': -1,
             'random_state': DEFAULT_RANDOM_STATE
         }
@@ -137,7 +149,8 @@ def _hyperopt_tune_lgbm(X, y, cv_folds, trials, metric):
         'bagging_fraction': float(best['bagging_fraction']),
         'bagging_freq': int(best['bagging_freq']),
         'min_gain_to_split': float(best['min_gain_to_split']),
-        'min_data_in_leaf': int(best['min_data_in_leaf'])
+        'min_data_in_leaf': int(best['min_data_in_leaf']),
+        'scale_pos_weight': float(best['scale_pos_weight'])
     }
     best_model = lgb.LGBMClassifier(
         objective='binary',
@@ -153,12 +166,31 @@ def run_cross_test(method=AUTOML_METHOD_DEFAULT, trials=AUTOML_TRIALS_DEFAULT, c
     X, y = _load_data(use_existing_features=use_existing_features, max_file_size=max_file_size, fast_dev_run=fast_dev_run)
     baseline_model = _make_baseline_model()
     baseline_score = _cv_score(baseline_model, X, y, cv_folds, metric)
+    
+    # 计算基线的额外指标
+    baseline_additional = {}
+    for m in AUTOML_ADDITIONAL_METRICS:
+        baseline_additional[m] = _cv_score(baseline_model, X, y, cv_folds, m)
+
     tuned_score = baseline_score
     best_params = {}
     if method == 'optuna':
         tuned_score, best_params = _optuna_tune_lgbm(X, y, cv_folds, trials, metric)
     elif method == 'hyperopt':
         tuned_score, best_params = _hyperopt_tune_lgbm(X, y, cv_folds, trials, metric)
+    
+    # 计算调优后的额外指标
+    best_model = lgb.LGBMClassifier(
+        objective='binary',
+        n_estimators=DEFAULT_NUM_BOOST_ROUND,
+        verbosity=-1,
+        random_state=DEFAULT_RANDOM_STATE,
+        **best_params
+    )
+    tuned_additional = {}
+    for m in AUTOML_ADDITIONAL_METRICS:
+        tuned_additional[m] = _cv_score(best_model, X, y, cv_folds, m)
+
     os.makedirs(os.path.dirname(AUTOML_RESULTS_PATH), exist_ok=True)
     result = {
         'method': method,
@@ -166,7 +198,9 @@ def run_cross_test(method=AUTOML_METHOD_DEFAULT, trials=AUTOML_TRIALS_DEFAULT, c
         'cv_folds': cv_folds,
         'trials': trials,
         'baseline_score': baseline_score,
+        'baseline_additional_metrics': baseline_additional,
         'tuned_score': tuned_score,
+        'tuned_additional_metrics': tuned_additional,
         'best_params': best_params
     }
     with open(AUTOML_RESULTS_PATH, 'w', encoding='utf-8') as f:

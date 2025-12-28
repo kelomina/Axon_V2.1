@@ -7,6 +7,7 @@ from config.config import (
     DEFAULT_MAX_FILE_SIZE, DEFAULT_NUM_BOOST_ROUND, DEFAULT_INCREMENTAL_ROUNDS,
     DEFAULT_INCREMENTAL_EARLY_STOPPING, DEFAULT_MAX_FINETUNE_ITERATIONS,
     DEFAULT_MIN_CLUSTER_SIZE, DEFAULT_MIN_SAMPLES, DEFAULT_MIN_FAMILY_SIZE,
+    DEFAULT_TREAT_NOISE_AS_FAMILY,
     SCAN_CACHE_PATH, SCAN_OUTPUT_DIR, HDBSCAN_SAVE_DIR,
     HELP_MAX_FILE_SIZE, HELP_FAST_DEV_RUN, HELP_SAVE_FEATURES,
     HELP_FINETUNE_ON_FALSE_POSITIVES, HELP_INCREMENTAL_TRAINING,
@@ -18,7 +19,7 @@ from config.config import (
     HELP_EXPLAIN_DISCREPANCY, HELP_TREAT_NOISE_AS_FAMILY, HELP_LIGHTGBM_MODEL_PATH,
     HELP_FAMILY_CLASSIFIER_PATH, HELP_CACHE_FILE, HELP_FILE_PATH, HELP_DIR_PATH,
     HELP_RECURSIVE, HELP_OUTPUT_PATH,
-    HELP_AUTOML_METHOD, HELP_AUTOML_TRIALS, HELP_AUTOML_CV, HELP_AUTOML_METRIC, HELP_AUTOML_FAST_DEV_RUN,
+    HELP_AUTOML_METHOD, HELP_AUTOML_TRIALS, HELP_AUTOML_CV, HELP_AUTOML_METRIC, HELP_AUTOML_FAST_DEV_RUN, HELP_SKIP_TUNING,
     AUTOML_METHOD_DEFAULT, AUTOML_TRIALS_DEFAULT, AUTOML_CV_FOLDS_DEFAULT, AUTOML_METRIC_DEFAULT,
     DETECTED_MALICIOUS_PATHS_REPORT_PATH
 )
@@ -60,7 +61,7 @@ def main():
     sp_finetune.add_argument('--min-family-size', type=int, default=DEFAULT_MIN_FAMILY_SIZE, help=HELP_MIN_FAMILY_SIZE)
     sp_finetune.add_argument('--plot-pca', action='store_true', help=HELP_PLOT_PCA)
     sp_finetune.add_argument('--explain-discrepancy', action='store_true', help=HELP_EXPLAIN_DISCREPANCY)
-    sp_finetune.add_argument('--treat-noise-as-family', action='store_true', help=HELP_TREAT_NOISE_AS_FAMILY)
+    sp_finetune.add_argument('--treat-noise-as-family', action='store_true', default=DEFAULT_TREAT_NOISE_AS_FAMILY, help=HELP_TREAT_NOISE_AS_FAMILY)
 
     sp_scan = subs.add_parser('scan', help='单次扫描或目录扫描')
     sp_scan.add_argument('--lightgbm-model-path', type=str, default=MODEL_PATH, help=HELP_LIGHTGBM_MODEL_PATH)
@@ -97,11 +98,14 @@ def main():
     sp_train_routing.add_argument('--max-file-size', type=int, default=DEFAULT_MAX_FILE_SIZE, help=HELP_MAX_FILE_SIZE)
     
     sp_train_all = subs.add_parser('train-all', help='一键执行特征提取、模型训练、评估与聚类')
+    sp_train_all.add_argument('--finetune-on-false-positives', action='store_true', help=HELP_FINETUNE_ON_FALSE_POSITIVES)
+    sp_train_all.add_argument('--skip-tuning', action='store_true', help=HELP_SKIP_TUNING)
+    
     sp_autotune = subs.add_parser('auto-tune', help='AutoML超参调优与交叉测试对比')
-    sp_autotune.add_argument('--method', type=str, default='optuna', choices=['optuna', 'hyperopt'], help=HELP_AUTOML_METHOD)
-    sp_autotune.add_argument('--trials', type=int, default=50, help=HELP_AUTOML_TRIALS)
-    sp_autotune.add_argument('--cv', type=int, default=5, help=HELP_AUTOML_CV)
-    sp_autotune.add_argument('--metric', type=str, default='roc_auc', choices=['roc_auc', 'accuracy'], help=HELP_AUTOML_METRIC)
+    sp_autotune.add_argument('--method', type=str, default=AUTOML_METHOD_DEFAULT, choices=['optuna', 'hyperopt'], help=HELP_AUTOML_METHOD)
+    sp_autotune.add_argument('--trials', type=int, default=AUTOML_TRIALS_DEFAULT, help=HELP_AUTOML_TRIALS)
+    sp_autotune.add_argument('--cv', type=int, default=AUTOML_CV_FOLDS_DEFAULT, help=HELP_AUTOML_CV)
+    sp_autotune.add_argument('--metric', type=str, default=AUTOML_METRIC_DEFAULT, choices=['roc_auc', 'accuracy', 'f1', 'precision', 'recall'], help=HELP_AUTOML_METRIC)
     sp_autotune.add_argument('--use-existing-features', action='store_true', help=HELP_USE_EXISTING_FEATURES)
     sp_autotune.add_argument('--fast-dev-run', action='store_true', help=HELP_AUTOML_FAST_DEV_RUN)
     sp_autotune.add_argument('--max-file-size', type=int, default=DEFAULT_MAX_FILE_SIZE, help=HELP_MAX_FILE_SIZE)
@@ -196,7 +200,7 @@ def main():
                 max_file_size=DEFAULT_MAX_FILE_SIZE,
                 fast_dev_run=False,
                 save_features=True,
-                finetune_on_false_positives=False,
+                finetune_on_false_positives=args.finetune_on_false_positives,
                 incremental_training=False,
                 incremental_data_dir=None,
                 incremental_raw_data_dir=None,
@@ -211,7 +215,7 @@ def main():
             pretrain.main(pre_args)
             from training import automl
             override_params = None
-            if os.path.exists(FEATURES_PKL_PATH):
+            if not args.skip_tuning and os.path.exists(FEATURES_PKL_PATH):
                 auto_args = argparse.Namespace(
                     method=AUTOML_METHOD_DEFAULT,
                     trials=AUTOML_TRIALS_DEFAULT,
@@ -228,7 +232,7 @@ def main():
                         max_file_size=DEFAULT_MAX_FILE_SIZE,
                         fast_dev_run=False,
                         save_features=True,
-                        finetune_on_false_positives=False,
+                        finetune_on_false_positives=args.finetune_on_false_positives,
                         incremental_training=False,
                         incremental_data_dir=None,
                         incremental_raw_data_dir=None,
@@ -270,7 +274,7 @@ def main():
                 min_family_size=DEFAULT_MIN_FAMILY_SIZE,
                 plot_pca=False,
                 explain_discrepancy=False,
-                treat_noise_as_family=False
+                treat_noise_as_family=DEFAULT_TREAT_NOISE_AS_FAMILY
             )
             finetune.main(fine_args)
             logger.info('训练与聚类流程已完成')

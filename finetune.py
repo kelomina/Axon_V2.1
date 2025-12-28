@@ -27,6 +27,7 @@ from models.family_classifier import FamilyClassifier
 from config.config import (
     PROCESSED_DATA_DIR, FEATURES_PKL_PATH, DEFAULT_MAX_FILE_SIZE,
     DEFAULT_MIN_CLUSTER_SIZE, DEFAULT_MIN_SAMPLES, DEFAULT_MIN_FAMILY_SIZE,
+    DEFAULT_TREAT_NOISE_AS_FAMILY,
     HDBSCAN_SAVE_DIR, HDBSCAN_CLUSTER_FIG_PATH, HDBSCAN_PCA_FIG_PATH,
     VIS_SAMPLE_SIZE, VIS_TSNE_PERPLEXITY, PCA_DIMENSION_FOR_CLUSTERING, DEFAULT_RANDOM_STATE
 )
@@ -335,6 +336,15 @@ def main(args):
         min_samples=args.min_samples
     )
 
+    if args.treat_noise_as_family and args.min_family_size == 1:
+        print("    [*] Treating each noise point as a unique family...")
+        noise_indices = np.where(cluster_labels == -1)[0]
+        if len(noise_indices) > 0:
+            max_label = cluster_labels.max()
+            for i, idx in enumerate(noise_indices):
+                cluster_labels[idx] = max_label + 1 + i
+            print(f"    [+] Assigned unique family IDs to {len(noise_indices)} noise points")
+
     print("\n[*] Step 5/6: Analyzing clusters and identifying new families...")
     family_analysis = analyze_clusters(malicious_files, cluster_labels, args.min_family_size, args.treat_noise_as_family)
     family_names = identify_new_families(malicious_files, cluster_labels, args.save_dir, args.min_family_size, args.treat_noise_as_family)
@@ -394,8 +404,8 @@ if __name__ == '__main__':
                        help='Generate additional PCA dimensionality reduction visualization')
     parser.add_argument('--explain-discrepancy', action='store_true',
                        help='Explain why nearby points belong to different clusters')
-    parser.add_argument('--treat-noise-as-family', action='store_true',
-                       help='Treat noise points as separate families (must meet minimum family size requirement)')
+    parser.add_argument('--treat-noise-as-family', action='store_true', default=DEFAULT_TREAT_NOISE_AS_FAMILY,
+                       help='Treat noise points as separate families (if min-family-size is 1, each noise point is unique)')
 
     args = parser.parse_args()
     main(args)

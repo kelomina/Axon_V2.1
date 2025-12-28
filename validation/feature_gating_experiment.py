@@ -7,7 +7,7 @@ from sklearn.model_selection import train_test_split
 from training.data_loader import load_dataset
 from training.train_lightgbm import train_lightgbm_model
 from training.evaluate import evaluate_model
-from config.config import PROCESSED_DATA_DIR, METADATA_FILE, FEATURES_PKL_PATH, DEFAULT_TEST_SIZE, DEFAULT_RANDOM_STATE, FEATURE_GATING_TOP_K, FEATURE_GATING_REPORT_PATH, PE_FEATURE_VECTOR_DIM, DEFAULT_NUM_BOOST_ROUND, FEATURE_GATING_K_START, FEATURE_GATING_K_STEP
+from config.config import PROCESSED_DATA_DIR, METADATA_FILE, FEATURES_PKL_PATH, DEFAULT_TEST_SIZE, DEFAULT_VAL_SIZE, DEFAULT_RANDOM_STATE, FEATURE_GATING_TOP_K, FEATURE_GATING_REPORT_PATH, PE_FEATURE_VECTOR_DIM, DEFAULT_NUM_BOOST_ROUND, FEATURE_GATING_K_START, FEATURE_GATING_K_STEP
 
 def load_features(use_existing_features: bool):
     if use_existing_features and os.path.exists(FEATURES_PKL_PATH):
@@ -26,7 +26,7 @@ def split_sets(X, y, files):
         )
         if len(X_temp) > 5:
             X_train, X_val, y_train, y_val, files_train, files_val = train_test_split(
-                X_temp, y_temp, files_temp, test_size=DEFAULT_TEST_SIZE, random_state=DEFAULT_RANDOM_STATE, stratify=y_temp if len(np.unique(y_temp)) > 1 else None
+                X_temp, y_temp, files_temp, test_size=DEFAULT_VAL_SIZE, random_state=DEFAULT_RANDOM_STATE, stratify=y_temp if len(np.unique(y_temp)) > 1 else None
             )
         else:
             X_train, X_val = X_temp, X_temp

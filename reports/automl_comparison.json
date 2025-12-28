@@ -1,17 +1,28 @@
 {
   "method": "optuna",
-  "metric": "roc_auc",
+  "metric": "f1",
   "cv_folds": 5,
   "trials": 50,
-  "baseline_score": 0.999740562592472,
-  "tuned_score": 0.9997375018859715,
+  "baseline_score": 0.9955867122470738,
+  "baseline_additional_metrics": {
+    "precision": 0.9954161571063725,
+    "recall": 0.9957574691399177,
+    "f1": 0.9955867122470738
+  },
+  "tuned_score": 0.9956557411348429,
+  "tuned_additional_metrics": {
+    "precision": 0.9957184287757451,
+    "recall": 0.9955931794158219,
+    "f1": 0.9956557411348429
+  },
   "best_params": {
-    "num_leaves": 323,
-    "learning_rate": 0.007468799476795834,
-    "feature_fraction": 0.645719655892078,
-    "bagging_fraction": 0.892423285151578,
-    "bagging_freq": 2,
-    "min_gain_to_split": 0.022858967560430363,
-    "min_data_in_leaf": 67
+    "num_leaves": 200,
+    "learning_rate": 0.007459429080422348,
+    "feature_fraction": 0.6621882972678835,
+    "bagging_fraction": 0.9665424903654268,
+    "bagging_freq": 13,
+    "min_gain_to_split": 0.00016556438403153822,
+    "min_data_in_leaf": 64,
+    "scale_pos_weight": 0.6193643691557988
   }
 }

@@ -15,7 +15,7 @@ from config.config import (
     GATING_LEARNING_RATE, GATING_EPOCHS, GATING_BATCH_SIZE, GATING_MODEL_PATH,
     EXPERT_NORMAL_MODEL_PATH, EXPERT_PACKED_MODEL_PATH,
     FEATURES_PKL_PATH, PROCESSED_DATA_DIR, METADATA_FILE, DEFAULT_MAX_FILE_SIZE,
-    DEFAULT_TEST_SIZE, DEFAULT_RANDOM_STATE, DEFAULT_NUM_BOOST_ROUND, DEFAULT_INCREMENTAL_ROUNDS,
+    DEFAULT_TEST_SIZE, DEFAULT_VAL_SIZE, DEFAULT_RANDOM_STATE, DEFAULT_NUM_BOOST_ROUND, DEFAULT_INCREMENTAL_ROUNDS,
     ROUTING_EVAL_REPORT_PATH, ROUTING_CONFUSION_MATRIX_PATH, MODEL_EVAL_FIG_DIR,
     EVAL_FONT_FAMILY, PREDICTION_THRESHOLD,
     EVAL_TOP_FEATURE_COUNT,
@@ -211,38 +211,31 @@ def generate_routing_labels(X):
 
 def train_gating_model_process(X_train, y_train, X_val, y_val):
     print(f"[*] Training Gating Model ({GATING_MODE})...")
-    
+    if GATING_MODE == 'rule':
+        print("    Using heuristic rule gating, no training performed")
+        return None
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"    Device: {device}")
-    
     model = create_gating_model(GATING_MODE, GATING_INPUT_DIM, GATING_HIDDEN_DIM, GATING_OUTPUT_DIM)
     model.to(device)
-    
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=GATING_LEARNING_RATE)
-    
     train_dataset = TensorDataset(torch.FloatTensor(X_train), torch.LongTensor(y_train))
     val_dataset = TensorDataset(torch.FloatTensor(X_val), torch.LongTensor(y_val))
-    
     train_loader = DataLoader(train_dataset, batch_size=GATING_BATCH_SIZE, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=GATING_BATCH_SIZE)
-    
     best_val_acc = 0.0
-    
     for epoch in range(GATING_EPOCHS):
         model.train()
         train_loss = 0.0
         for inputs, labels in train_loader:
             inputs, labels = inputs.to(device), labels.to(device)
-            
             optimizer.zero_grad()
             outputs = model(inputs)
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
             train_loss += loss.item()
-            
-        # Validation
         model.eval()
         all_preds = []
         all_labels = []
@@ -253,14 +246,11 @@ def train_gating_model_process(X_train, y_train, X_val, y_val):
                 _, preds = torch.max(outputs, 1)
                 all_preds.extend(preds.cpu().numpy())
                 all_labels.extend(labels.cpu().numpy())
-        
         val_acc = accuracy_score(all_labels, all_preds)
         print(f"    Epoch {epoch+1}/{GATING_EPOCHS} - Loss: {train_loss/len(train_loader):.4f} - Val Acc: {val_acc:.4f}")
-        
         if val_acc > best_val_acc:
             best_val_acc = val_acc
             torch.save(model.state_dict(), GATING_MODEL_PATH)
-            
     print(f"[+] Gating Model saved to {GATING_MODEL_PATH} (Best Acc: {best_val_acc:.4f})")
     return model
 
@@ -443,7 +433,7 @@ def main(args=None):
     
     if len(X_normal) > 10:
         X_t_norm, X_v_norm, y_t_norm, y_v_norm, f_t_norm, f_v_norm = train_test_split(
-            X_normal, y_normal, files_normal, test_size=DEFAULT_TEST_SIZE, random_state=DEFAULT_RANDOM_STATE
+            X_normal, y_normal, files_normal, test_size=DEFAULT_VAL_SIZE, random_state=DEFAULT_RANDOM_STATE
         )
         print(f"[*] Expert Normal - Train: {len(X_t_norm)}, Val: {len(X_v_norm)}")
         
@@ -462,7 +452,7 @@ def main(args=None):
     
     if len(X_packed) > 10:
         X_t_pack, X_v_pack, y_t_pack, y_v_pack, f_t_pack, f_v_pack = train_test_split(
-            X_packed, y_packed, files_packed, test_size=DEFAULT_TEST_SIZE, random_state=DEFAULT_RANDOM_STATE
+            X_packed, y_packed, files_packed, test_size=DEFAULT_VAL_SIZE, random_state=DEFAULT_RANDOM_STATE
         )
         print(f"[*] Expert Packed - Train: {len(X_t_pack)}, Val: {len(X_v_pack)}")
         
