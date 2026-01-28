@@ -5,12 +5,15 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <memory>
 #include <new>
+#include <unordered_map>
 
 #include <nlohmann/json.hpp>
 
 struct kvd_handle {
-  kvd::MalwareScanner scanner;
+  kvd::Config config;
+  std::shared_ptr<int> token;
 };
 
 static nlohmann::json to_json(const kvd::ScanResult& r) {
@@ -47,7 +50,12 @@ kvd_handle* kvd_create(const kvd_config* config) {
   if (!scanner_opt) {
     return nullptr;
   }
-  kvd_handle* h = new (std::nothrow) kvd_handle{std::move(*scanner_opt)};
+  kvd_handle* h = new (std::nothrow) kvd_handle{};
+  if (!h) {
+    return nullptr;
+  }
+  h->config = std::move(cfg);
+  h->token = std::make_shared<int>(1);
   return h;
 }
 
@@ -91,11 +99,46 @@ static bool path_exists(const std::string& path) {
   return !path.empty() && std::filesystem::exists(std::filesystem::path(path), ec) && !ec;
 }
 
+struct TokenHash {
+  std::size_t operator()(const std::shared_ptr<int>& p) const noexcept {
+    return std::hash<int*>()(p.get());
+  }
+};
+
+struct TokenEq {
+  bool operator()(const std::shared_ptr<int>& a, const std::shared_ptr<int>& b) const noexcept {
+    return a.get() == b.get();
+  }
+};
+
+static kvd::MalwareScanner* get_thread_scanner(kvd_handle* handle) {
+  if (!handle || !handle->token) {
+    return nullptr;
+  }
+  thread_local std::unordered_map<std::shared_ptr<int>, std::unique_ptr<kvd::MalwareScanner>, TokenHash, TokenEq> cache;
+  auto it = cache.find(handle->token);
+  if (it != cache.end()) {
+    return it->second.get();
+  }
+  auto scanner_opt = kvd::MalwareScanner::create(handle->config);
+  if (!scanner_opt) {
+    return nullptr;
+  }
+  auto ptr = std::make_unique<kvd::MalwareScanner>(std::move(*scanner_opt));
+  auto raw = ptr.get();
+  cache.emplace(handle->token, std::move(ptr));
+  return raw;
+}
+
 int kvd_scan_path(kvd_handle* handle, const char* path, char** out_json, size_t* out_len) {
   if (!handle || !path) {
     return -1;
   }
-  kvd::ScanResult r = handle->scanner.scan_path(path);
+  auto scanner = get_thread_scanner(handle);
+  if (!scanner) {
+    return -1;
+  }
+  kvd::ScanResult r = scanner->scan_path(path);
   return write_json_out(to_json(r), out_json, out_len);
 }
 
@@ -104,7 +147,11 @@ int kvd_scan_bytes(kvd_handle* handle, const unsigned char* bytes, size_t len, c
     return -1;
   }
   std::vector<std::uint8_t> v(bytes, bytes + len);
-  kvd::ScanResult r = handle->scanner.scan_bytes(v);
+  auto scanner = get_thread_scanner(handle);
+  if (!scanner) {
+    return -1;
+  }
+  kvd::ScanResult r = scanner->scan_bytes(v);
   return write_json_out(to_json(r), out_json, out_len);
 }
 
