@@ -1,0 +1,10 @@
+{
+  "name": "kolo-virus-detector-native",
+  "version-string": "0.1.0",
+  "dependencies": [
+    "gtest",
+    "lief",
+    "lightgbm",
+    "nlohmann-json"
+  ]
+}

@@ -1,0 +1,7 @@
+LIBRARY "kvd"
+EXPORTS
+  kvd_create
+  kvd_destroy
+  kvd_scan_path
+  kvd_scan_bytes
+  kvd_free
