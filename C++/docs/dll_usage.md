@@ -123,6 +123,41 @@ void kvd_free(char* p);
 - 用途：释放 `kvd_scan_path/kvd_scan_bytes` 返回的 `out_json`。
 - 约束：必须用它释放，避免跨 CRT 释放导致崩溃。
 
+### 函数：kvd_validate_models
+
+```c
+int kvd_validate_models(const kvd_config* config, char** out_error, size_t* out_len);
+```
+
+- 用途：校验模型文件与家族分类器文件是否缺失或损坏。
+- 参数：
+  - `config`：不能为空；可以传零初始化的 `kvd_config cfg = {0};`
+  - `out_error/out_len`：输出错误码字符串与长度；不需要时可同时传 `NULL`
+- 返回值：
+  - `0`：校验通过
+  - `<0`：校验失败，错误含义见下表
+- 内存释放：
+  - `out_error` 由 DLL 内 `malloc` 分配，必须用 `kvd_free(*out_error)` 释放
+
+---
+
+## 错误对照表（kvd_validate_models）
+
+| 返回值 | out_error 字符串 | 说明 |
+| --- | --- | --- |
+| 0 | ok | 校验通过 |
+| -1 | n/a | 参数非法（config 为空或 out_error/out_len 仅给其一） |
+| -10 | model_main_missing | 主模型文件缺失 |
+| -11 | model_main_invalid | 主模型文件损坏或无法加载 |
+| -12 | model_route_incomplete | 路由模型不完整（只提供 normal 或 packed 其中之一） |
+| -13 | model_normal_missing | normal 模型文件缺失 |
+| -14 | model_normal_invalid | normal 模型文件损坏或无法加载 |
+| -15 | model_packed_missing | packed 模型文件缺失 |
+| -16 | model_packed_invalid | packed 模型文件损坏或无法加载 |
+| -17 | family_classifier_missing | 家族分类器文件缺失 |
+| -18 | family_classifier_invalid | 家族分类器文件损坏或无法加载 |
+| -100 | n/a | 输出错误信息内存分配失败 |
+
 ---
 
 ## 方式 A：静态链接（import lib，隐式加载）

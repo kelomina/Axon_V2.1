@@ -4,6 +4,7 @@
 #include "malware_scanner.h"
 
 #include <cstdlib>
+#include <filesystem>
 #include <new>
 
 #include <nlohmann/json.hpp>
@@ -70,6 +71,26 @@ static int write_json_out(const nlohmann::json& j, char** out_json, size_t* out_
   return 0;
 }
 
+static int write_string_out(const std::string& s, char** out_json, size_t* out_len) {
+  if (!out_json || !out_len) {
+    return -1;
+  }
+  char* buf = static_cast<char*>(std::malloc(s.size() + 1));
+  if (!buf) {
+    return -2;
+  }
+  std::memcpy(buf, s.data(), s.size());
+  buf[s.size()] = '\0';
+  *out_json = buf;
+  *out_len = s.size();
+  return 0;
+}
+
+static bool path_exists(const std::string& path) {
+  std::error_code ec;
+  return !path.empty() && std::filesystem::exists(std::filesystem::path(path), ec) && !ec;
+}
+
 int kvd_scan_path(kvd_handle* handle, const char* path, char** out_json, size_t* out_len) {
   if (!handle || !path) {
     return -1;
@@ -89,4 +110,86 @@ int kvd_scan_bytes(kvd_handle* handle, const unsigned char* bytes, size_t len, c
 
 void kvd_free(char* p) {
   std::free(p);
+}
+
+int kvd_validate_models(const kvd_config* config, char** out_error, size_t* out_len) {
+  if (!config) {
+    return KVD_MODEL_ERR_INVALID_ARGUMENT;
+  }
+  if ((out_error && !out_len) || (!out_error && out_len)) {
+    return KVD_MODEL_ERR_INVALID_ARGUMENT;
+  }
+
+  kvd::Config cfg = kvd::config_from_api(
+      config->model_path,
+      config->model_normal_path,
+      config->model_packed_path,
+      config->family_classifier_json_path,
+      config->allowed_scan_root,
+      config->max_file_size,
+      config->prediction_threshold);
+
+  auto write_error = [&](const std::string& code) -> int {
+    if (!out_error && !out_len) {
+      return 0;
+    }
+    int rc = write_string_out(code, out_error, out_len);
+    return rc == 0 ? 0 : KVD_MODEL_ERR_OOM;
+  };
+
+  if (cfg.model_path.empty()) {
+    int rc = write_error("model_main_missing");
+    return rc == 0 ? KVD_MODEL_ERR_MAIN_MISSING : rc;
+  }
+  if (!path_exists(cfg.model_path)) {
+    int rc = write_error("model_main_missing");
+    return rc == 0 ? KVD_MODEL_ERR_MAIN_MISSING : rc;
+  }
+  if (!kvd::LightGbmModel::load_from_file(cfg.model_path)) {
+    int rc = write_error("model_main_invalid");
+    return rc == 0 ? KVD_MODEL_ERR_MAIN_INVALID : rc;
+  }
+
+  bool has_normal = !cfg.model_normal_path.empty();
+  bool has_packed = !cfg.model_packed_path.empty();
+  if (has_normal != has_packed) {
+    int rc = write_error("model_route_incomplete");
+    return rc == 0 ? KVD_MODEL_ERR_ROUTE_INCOMPLETE : rc;
+  }
+
+  if (has_normal) {
+    if (!path_exists(cfg.model_normal_path)) {
+      int rc = write_error("model_normal_missing");
+      return rc == 0 ? KVD_MODEL_ERR_NORMAL_MISSING : rc;
+    }
+    if (!kvd::LightGbmModel::load_from_file(cfg.model_normal_path)) {
+      int rc = write_error("model_normal_invalid");
+      return rc == 0 ? KVD_MODEL_ERR_NORMAL_INVALID : rc;
+    }
+  }
+
+  if (has_packed) {
+    if (!path_exists(cfg.model_packed_path)) {
+      int rc = write_error("model_packed_missing");
+      return rc == 0 ? KVD_MODEL_ERR_PACKED_MISSING : rc;
+    }
+    if (!kvd::LightGbmModel::load_from_file(cfg.model_packed_path)) {
+      int rc = write_error("model_packed_invalid");
+      return rc == 0 ? KVD_MODEL_ERR_PACKED_INVALID : rc;
+    }
+  }
+
+  if (!cfg.family_classifier_json_path.empty()) {
+    if (!path_exists(cfg.family_classifier_json_path)) {
+      int rc = write_error("family_classifier_missing");
+      return rc == 0 ? KVD_MODEL_ERR_FAMILY_MISSING : rc;
+    }
+    if (!kvd::FamilyClassifier::load_from_json(cfg.family_classifier_json_path)) {
+      int rc = write_error("family_classifier_invalid");
+      return rc == 0 ? KVD_MODEL_ERR_FAMILY_INVALID : rc;
+    }
+  }
+
+  int rc = write_error("ok");
+  return rc == 0 ? KVD_MODEL_OK : rc;
 }

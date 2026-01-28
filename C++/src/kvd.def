@@ -5,3 +5,4 @@ EXPORTS
   kvd_scan_path
   kvd_scan_bytes
   kvd_free
+  kvd_validate_models
