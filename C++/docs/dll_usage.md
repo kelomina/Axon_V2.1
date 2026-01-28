@@ -80,6 +80,8 @@ void kvd_destroy(kvd_handle* handle);
 
 - 用途：销毁句柄，释放模型与相关资源。
 - 约束：允许传 `NULL`（等同于 no-op）是常见做法，但当前实现直接 `delete`，建议调用前自行判空。
+- 多线程：同一 `kvd_handle` 可被多线程并行调用；每个线程会懒加载并缓存自己的扫描器实例，不会互相阻塞。
+- 资源占用：每个线程首次调用会加载一份模型与分类器，线程数越多内存占用越高；线程退出时缓存才会释放。
 
 ### 函数：kvd_scan_path
 
@@ -97,6 +99,7 @@ int kvd_scan_path(kvd_handle* handle, const char* path, char** out_json, size_t*
   - `<0`：调用层错误（例如参数非法、内存分配失败等）
 - 内存释放：
   - 成功时 `*out_json` 由 DLL 内 `malloc` 分配，必须用 `kvd_free(*out_json)` 释放（不要用 `free/delete`，避免 CRT 不一致）。
+- 多线程：可并行调用；同一 `kvd_handle` 在不同线程会使用不同的内部实例。
 
 典型 JSON 字段：
 
@@ -113,6 +116,7 @@ int kvd_scan_bytes(kvd_handle* handle, const unsigned char* bytes, size_t len, c
 
 - 用途：扫描内存缓冲区（当前实现会返回 JSON，`error` 为 `scan_bytes_not_implemented`）。
 - 返回值/释放规则：同 `kvd_scan_path`。
+- 多线程：可并行调用；同一 `kvd_handle` 在不同线程会使用不同的内部实例。
 
 ### 函数：kvd_free
 
